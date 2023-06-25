@@ -1,0 +1,19 @@
+FROM python:3.11-slim-bookworm
+RUN apt-get update \
+&& apt-get install gcc -y \
+&& apt-get clean
+
+COPY requirements.txt /
+RUN pip install --upgrade pip
+RUN pip install -r /requirements.txt
+COPY . /src
+
+WORKDIR /src/
+
+RUN useradd -ms /bin/bash appuser
+RUN chown -R appuser:appuser /src
+RUN chmod 700 /src
+RUN chown -R appuser:appuser /var/log
+RUN chmod 700 /var/log
+
+USER appuser
