@@ -13,3 +13,7 @@ math.fsum([0.1]*10) == 1
 
 cProfile.run("sum([Decimal('0.1')]*1000)")
 
+with cProfile.Profile() as pr:
+    sum([0.1]*10)
+
+    pr.print_stats()
