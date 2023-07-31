@@ -1,0 +1,31 @@
+version: '3'
+services:
+  sqldb:
+    image: postgres:15.3
+    volumes:
+      - database-data:/var/lib/postgresql/data/
+      - ~/src/data-challenges/query_optimization/data.dmp:/root/data.dmp
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=docker
+      - POSTGRES_PASSWORD=docker
+      - POSTGRES_DB=defaultdb
+  jupyter:
+    image: jupyter/scipy-notebook
+    user: root
+    ports:
+      - 10000:8888
+    volumes:
+      - ~/src/data-challenges:/home/jovyan/work
+    environment:
+      - GRANT_SUDO=yes
+      - JUPYTER_ENABLE_LAB=yes
+
+volumes:
+  database-data:
+
+networks:
+  default:
+    external: true
+    name: bluenet
