@@ -8,7 +8,7 @@ from typing import Optional
 from datetime import datetime
 from decimal import Decimal
 
-from . import instrument_profit_loss as ipl
+from . import position_gain as pg
 
 class PositionStatus(Enum):
     """enum class for the Position
@@ -27,9 +27,9 @@ class Position:
     start_date
     """
     def __init__(
-            self, external_id: str, exchange: str="USA", 
+            self, external_id: str, exchange: str="PCX", 
             id_type: str="ticker", 
-            position_entry_quote: Optional[float]=None,
+            position_entry_price: Optional[float]=None,
             position_entry_date: Optional[datetime]=None,
             position_size: Optional[float]=None):
         """Initialize position
@@ -38,6 +38,7 @@ class Position:
         can they be Closed when being initialized? technically yes...
         they would have a last_closed_price and last_closed_date?
 
+        PCX is the Pacific Exchange
         position_entry_date = date entered position
         position_size = number of shares held
         """
@@ -53,7 +54,7 @@ class Position:
             status = PositionStatus.OPEN_SHORT
         self.status = status
 
-        self.position_entry_quote = position_entry_quote
+        self.position_entry_price = position_entry_price
         self.position_entry_date = position_entry_date
         self.position_size = position_size
 
@@ -94,17 +95,17 @@ class Position:
         - total percent gain > 10%
         """
         
-        pnl = ipl.profit_loss_percent(self.position_entry_quote, current_price)
+        gain = pg.compute_percent_gain(self.position_entry_price, current_price)
 
-        annualized_pnl, position_days = ipl.profit_loss_annualized_percent(
-            pnl, self.position_entry_date, datetime.today())
+        annualized_gain, position_days = pg.compute_annualized_percent_gain(
+            gain, self.position_entry_date, datetime.today())
         
         # good_time = False
-        good_time = annualized_pnl > market_rate
+        good_time = annualized_gain > market_rate
         
-        good_time = good_time and pnl > Decimal("0.1")            
+        good_time = good_time and gain > Decimal("0.1")            
 
-        return good_time, annualized_pnl
+        return good_time, annualized_gain
     
 
 class Benchmark:
