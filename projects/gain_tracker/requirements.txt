@@ -1,0 +1,7 @@
+"yfinance[nospam,repair]"
+dagster
+dagster-webserver
+daster-graphql
+dagster-gcp
+dagster-gcp-pandas
+# google-cloud-bigquery # dependency is already installed

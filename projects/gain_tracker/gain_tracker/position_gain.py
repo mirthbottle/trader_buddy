@@ -29,8 +29,20 @@ def compute_annualized_gain(gain: Decimal, days: int):
     pct_yr = Decimal(str(days))/Decimal("365.0")
     if gain >= 0:
         return min(gain/pct_yr, gain)
-    else:
-        return max(gain/pct_yr, gain)
+    
+    return max(gain/pct_yr, gain)
+
+def compute_percent_gain(
+        gain: Decimal, n_shares: float, start_price: float):
+    """Compute percent gain including all transactions
+
+    gain: includes transactions
+
+    compute as a percent of initial value of the position
+    """
+    percent_gain = gain / Decimal(str(n_shares))*Decimal(str(start_price))
+    
+    return percent_gain
 
 def compute_annualized_percent_gain(
         percent_gain: Decimal, start_date: datetime, end_date: datetime
@@ -45,6 +57,7 @@ def compute_annualized_percent_gain(
 
     annualized = (percent_gain+Decimal("1"))**root_yr+Decimal("-1")
     return annualized, days
+
 
 def compute_percent_price_gain(
         start_price: float, end_price: float
