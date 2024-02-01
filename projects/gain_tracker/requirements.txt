@@ -5,3 +5,4 @@ daster-graphql
 dagster-gcp
 dagster-gcp-pandas
 # google-cloud-bigquery # dependency is already installed
+# openpyxl # (needed for opening excel files. only in a notebook currently)
