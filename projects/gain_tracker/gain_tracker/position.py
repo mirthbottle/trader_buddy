@@ -20,6 +20,12 @@ class PositionStatus(Enum):
     OPEN_SHORT = 2
     CLOSED = -1
 
+class IDType(Enum):
+    """finite set of ID types
+    """
+    TICKER=0
+    ISIN=1
+
 class Position:
     """Position class
 
@@ -28,7 +34,7 @@ class Position:
     """
     def __init__(
             self, external_id: str, exchange: str="PCX", 
-            id_type: str="ticker", 
+            id_type: str="TICKER", 
             position_entry_price: Optional[float]=None,
             position_entry_date: Optional[datetime]=None,
             position_size: Optional[float]=None):
