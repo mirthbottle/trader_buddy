@@ -12,10 +12,30 @@ from dagster import Definitions, SourceAsset, asset
 
 import yfinance as yf
 
+from gain_tracker.etrade_api import ETradeAPI
+
+# from assets.positions import etrade_positions
+
 DEFAULT_BENCHMARK_TICKER="IVV"
 
 # name is wrong
 positions_data = SourceAsset(key="positions_dec")
+
+@asset
+def etrade_positions():
+    """Pull accounts and positions in etrade
+
+    see if dagster can trigger opening a website and have a user input
+    """
+    env = os.environ.get("ENV", "dev")
+    session_token = os.environ["SESSION_TOKEN"]
+    session_token_secret = os.environ["SESSION_TOKEN_SECRET"]
+    etrader = ETradeAPI(
+        env, session_token=session_token, session_token_secret=session_token_secret)
+    session = etrader.create_authenticated_session()
+    accounts = etrader.list_accounts()
+    return pd.DataFrame(accounts)
+
 
 @asset
 def benchmark_history(positions_dec:pd.DataFrame):
@@ -36,7 +56,9 @@ def positions_count(
     return positions_dec
 
 defs = Definitions(
-    assets=[positions_data, positions_count, benchmark_history],
+    assets=[
+        etrade_positions, positions_data, 
+        positions_count, benchmark_history],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ["GCP_PROJECT"],  # required
