@@ -27,9 +27,9 @@ def etrade_positions():
 
     see if dagster can trigger opening a website and have a user input
     """
-    env = os.environ.get("ENV", "dev")
-    session_token = os.environ["SESSION_TOKEN"]
-    session_token_secret = os.environ["SESSION_TOKEN_SECRET"]
+    env = os.getenv("ENV", "dev")
+    session_token = os.getenv("SESSION_TOKEN")
+    session_token_secret = os.getenv("SESSION_TOKEN_SECRET")
     etrader = ETradeAPI(
         env, session_token=session_token, session_token_secret=session_token_secret)
     session = etrader.create_authenticated_session()
