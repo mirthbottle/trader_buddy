@@ -12,7 +12,7 @@ from dagster import Definitions, SourceAsset, asset
 
 import yfinance as yf
 
-from gain_tracker.etrade_api import ETradeAPI
+from resources.etrade_resource import ETrader
 
 # from assets.positions import etrade_positions
 
@@ -22,20 +22,30 @@ DEFAULT_BENCHMARK_TICKER="IVV"
 positions_data = SourceAsset(key="positions_dec")
 
 @asset
-def etrade_positions():
-    """Pull accounts and positions in etrade
+def etrade_accounts(etrader: ETrader):
+    """Pull accounts in etrade
 
     see if dagster can trigger opening a website and have a user input
     """
-    env = os.getenv("ENV", "dev")
-    session_token = os.getenv("SESSION_TOKEN")
-    session_token_secret = os.getenv("SESSION_TOKEN_SECRET")
-    etrader = ETradeAPI(
-        env, session_token=session_token, session_token_secret=session_token_secret)
-    session = etrader.create_authenticated_session()
     accounts = etrader.list_accounts()
     return pd.DataFrame(accounts)
 
+@asset
+def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
+    """Pull positions in etrade for each account
+    """
+    keys = etrade_accounts["accountidkey"].values
+
+    all_positions = []
+    for k in keys:
+        portfolio = etrader.view_portfolio(k)
+        if portfolio is not None:
+            ps = pd.DataFrame(portfolio)
+            ps.loc[:, "account_id_key"] = k
+            all_positions.append(ps)
+
+    positions = pd.concat(all_positions)
+    return positions
 
 @asset
 def benchmark_history(positions_dec:pd.DataFrame):
@@ -57,7 +67,7 @@ def positions_count(
 
 defs = Definitions(
     assets=[
-        etrade_positions, positions_data, 
+        etrade_accounts, etrade_positions, positions_data, 
         positions_count, benchmark_history],
     resources={
         "io_manager": BigQueryPandasIOManager(
@@ -65,6 +75,7 @@ defs = Definitions(
             # location="us-west1",  # optional, defaults to the default location for the project - see https://cloud.google.com/bigquery/docs/locations for a list of locations
             dataset="gain_tracker_dev",  # optional, defaults to PUBLIC
             timeout=15.0,  # optional, defaults to None
-        )
+        ),
+        "etrader": ETrader()
     },
 )

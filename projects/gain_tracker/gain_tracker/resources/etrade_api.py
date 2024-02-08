@@ -111,7 +111,7 @@ class ETradeAPI:
         if response is None or response.status_code != 200:
             logger.debug("Response Body: %s", response)
             logger.info("Reauthorize session")
-            self.get_session('')
+            self.authenticate_session()
             return None
 
         return response
@@ -191,7 +191,7 @@ class ETradeAPI:
             logger.debug("Response Body: %s", response)
             return None
 
-        portfolio = response.json()["PortfolioResponse"]["AccountPortfolio"]
+        portfolio = response.json()["PortfolioResponse"]["AccountPortfolio"][0]
         positions = portfolio["Position"]
 
         if page_number < portfolio["totalPages"] - 1:
