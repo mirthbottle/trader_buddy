@@ -50,7 +50,7 @@ def benchmark_history(positions_dec:pd.DataFrame):
     return bm_hist.reset_index()
 
 @asset
-def market_values(positions: pd.DataFrame):
+def market_values(etrade_positions: pd.DataFrame):
     """Compute position_gains
 
     """
