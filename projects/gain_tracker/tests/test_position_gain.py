@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from ..gain_tracker import position_gain as pg
+from gain_tracker import position_gain as pg
 
 
 def test_compute_gain():

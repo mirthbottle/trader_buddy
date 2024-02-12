@@ -8,6 +8,7 @@ from dagster import SourceAsset, asset
 import yfinance as yf
 
 from resources.etrade_resource import ETrader
+import position_gain as pg
 
 DEFAULT_BENCHMARK_TICKER="IVV"
 

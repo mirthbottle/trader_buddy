@@ -1,5 +1,5 @@
 
-from ..gain_tracker import position
+from gain_tracker import position
 
 class TestPosition:
     def test_init(self):
