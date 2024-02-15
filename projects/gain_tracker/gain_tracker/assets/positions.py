@@ -42,7 +42,7 @@ def etrade_accounts(etrader: ETrader):
     """
     accounts = pd.DataFrame(etrader.list_accounts())
 
-    snake_cols = [camel_to_snake(c) for c in accounts.columns]
+    snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
     accounts.rename(columns=snake_cols, inplace=True)
     return accounts.set_index("ACCOUNT_ID_KEY")
 

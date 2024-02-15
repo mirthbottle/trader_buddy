@@ -25,4 +25,4 @@ def test_etrade_accounts(mock_create_auth_sess, mock_list_accounts):
     )
     print(result)
     assert len(result) == 2
-    assert set(result.columns) == {'accountId', 'accountIdKey'}
+    assert set(result.columns) == {'ACCOUNT_ID'}

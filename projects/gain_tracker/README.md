@@ -2,9 +2,14 @@
 
 ## Local Testing
 
-run dagster from `projects/gain_tracker/gain_tracker`
+- set environment vars
+- run dagster from `projects/gain_tracker/gain_tracker`
 
 ```
+set +a
+source ../../jupyter-notebooks/.env
+set -a
+
 dagster dev -f definitions.py
 ```
 
