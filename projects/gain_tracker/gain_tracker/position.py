@@ -32,6 +32,8 @@ class Position:
     ticker - most trading platforms use tickers
     start_date
     """
+    fields = []
+    
     def __init__(
             self, external_id: str, exchange: str="PCX", 
             id_type: str="TICKER", 
@@ -87,6 +89,11 @@ class Position:
         shares = round(target_value/current_price, 0)
 
         # trading_platform.buy(shares)
+
+    def compute_gains(self, current_price):
+        """compute all the gains needed
+        """
+        pass
 
     def recommend_exit_long(
             self, current_price: Decimal, market_rate: Optional[Decimal]=Decimal("0.08")):

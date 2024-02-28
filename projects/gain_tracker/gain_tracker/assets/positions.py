@@ -4,7 +4,9 @@
 
 from typing import Optional
 import re
+from datetime import date
 import pandas as pd
+
 from dagster import (
     asset, multi_asset, AssetOut, AssetKey,
     DailyPartitionsDefinition, AssetExecutionContext
@@ -13,7 +15,9 @@ from dagster import (
 import yfinance as yf
 
 from ..resources.etrade_resource import ETrader
+
 from .. import position_gain as pg
+from ..position import Position
 
 DEFAULT_BENCHMARK_TICKER="IVV"
 
@@ -30,7 +34,7 @@ def camel_to_snake(camel_case):
     cc_adj = camel_case[0].upper()+camel_case[1:]
     words = re.findall(r'[A-Z][a-z0-9]*', cc_adj)
     # Join the words with underscores and convert to lowercase
-    snake_case = '_'.join(words).upper()
+    snake_case = '_'.join(words).lower()
     return snake_case
 
 
@@ -44,25 +48,31 @@ def etrade_accounts(etrader: ETrader):
 
     snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
     accounts.rename(columns=snake_cols, inplace=True)
-    return accounts.set_index("ACCOUNT_ID_KEY")
+    return accounts.set_index("account_id_key")
 
 @asset
 def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
     """Pull positions in etrade for each account
     """
-    keys = etrade_accounts["ACCOUNT_ID_KEY"].values
+    keys = etrade_accounts.index# ["ACCOUNT_ID_KEY"].values
 
     all_positions = []
     for k in keys:
         portfolio = etrader.view_portfolio(k)
         if portfolio is not None:
             ps = pd.DataFrame(portfolio)
-            # ps.loc[:, "account_id_key"] = k
             all_positions.append(ps)
 
     positions = pd.concat(all_positions)
-    
-    return positions
+
+    snake_cols = {c:camel_to_snake(c) for c in positions.columns}
+    positions.rename(columns=snake_cols, inplace=True)
+
+    pos_cols = [
+        "symbol_description", "date_acquired", "price_paid", "quantity",
+        "market_value"]
+    positions.set_index("position_id")
+    return positions[pos_cols]
 
 
 @multi_asset(
@@ -85,8 +95,8 @@ def updated_positions(
     not sure what happens to the positionid when only some shares are sold
     """
     from ..definitions import defs
-    old_open_positions = defs.load_asset_value(AssetKey("open_positions")).set_index('positionid')
-    old_closed_positions = defs.load_asset_value(AssetKey("closed_positions")).set_index('positionid')
+    old_open_positions = defs.load_asset_value(AssetKey("open_positions")).set_index('position_id')
+    old_closed_positions = defs.load_asset_value(AssetKey("closed_positions")).set_index('position_id')
 
     # select the positions that aren't in etrade_positions?
     new_closed_positions = old_open_positions.loc[
@@ -101,17 +111,41 @@ def updated_positions(
 
     return open_positions, closed_positions
 
-@asset(partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"))
+def make_position(r):
+    """
+    """
+    p = Position(
+        r["symbol_description"],
+        position_entry_price=r["price_paid"],
+        position_entry_date=r["date_acquired"],
+        position_size=r["quantity"]
+        )
+    return p
+
+
+@asset(
+        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"),
+        metadata={"partition_expr": "DATE(date)"}
+)
 def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
     """Market values and gains
     
     save this asset daily? ok
-    closed positions may not have the last entry of market_values
-    is that ok?
+
+    how to not overwrite closed positions, though
+    may need a separate table for closed positions for their last values
     """
     partition_date_str = context.partition_key
 
-    return open_positions
+    # positions = open_positions.apply(make_position, axis=1)
+    # positions.apply(lambda p: p.recommend_exit_long())
+    open_positions.loc[:, "percent_gain"] = open_positions.apply(
+        lambda r: pg.compute_percent_price_gain(
+            r["price_paid"], r["market_value"]), axis=1)
+
+    open_positions.loc[:, "date"] = date.fromisoformat(partition_date_str)
+    return open_positions[["date", "position_id", "symbol_description", "percent_gain"]]
+
 
 @asset(partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"))
 def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):

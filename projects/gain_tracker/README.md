@@ -2,8 +2,9 @@
 
 ## Local Testing
 
+- cd to `projects/gain_tracker/gain_tracker`
 - set environment vars
-- run dagster from `projects/gain_tracker/gain_tracker`
+- run dagster
 
 ```
 set +a
