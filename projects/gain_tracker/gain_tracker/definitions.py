@@ -10,10 +10,11 @@ import pandas as pd
 from dagster_gcp_pandas import BigQueryPandasIOManager
 from dagster import Definitions, asset
 
-from resources.etrade_resource import ETrader
+from gain_tracker.resources.etrade_resource import ETrader
 
-from assets.positions import (
-    positions, etrade_accounts, etrade_positions,
+from gain_tracker.assets.positions import (
+    updated_positions, etrade_accounts, etrade_positions,
+    market_values,
     benchmark_values)
 
 
@@ -28,8 +29,10 @@ def positions_count(
 
 defs = Definitions(
     assets=[
-        etrade_accounts, etrade_positions, 
-        positions_count, benchmark_values],
+        # positions_count, 
+        etrade_accounts, etrade_positions, updated_positions,
+        market_values,
+        benchmark_values],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ["GCP_PROJECT"],  # required
