@@ -7,11 +7,25 @@ from datetime import datetime
 from decimal import Decimal, getcontext
 getcontext().prec = 12
 
+def compute_percent_price_gain(
+        start_price: float, end_price: float
+        ) -> Decimal:
+    """Compute gain of price only
+
+    scale -1 to 1
+    eg. 0.1 = 10%
+
+    this doesn't include transactions...
+    should I be computing the raw gain first instead?
+    """
+    pnlp = Decimal(str(end_price))/Decimal(str(start_price))+Decimal("-1")
+    return pnlp
+
 def compute_gain(
         percent_price_gain: Decimal, n_shares: float, start_price: float,
         transactions_value: Optional[Decimal]=Decimal("0")
         ) -> Decimal:
-    """Absolute gain
+    """Absolute gain with transactions included
 
     n_shares = number of shares, usually an int, but it could be fractional
     
@@ -23,14 +37,6 @@ def compute_gain(
     
     return gain+transactions_value
     
-def compute_annualized_gain(gain: Decimal, days: int):
-    """Amortized for the year
-    """
-    pct_yr = Decimal(str(days))/Decimal("365.0")
-    if gain >= 0:
-        return min(gain/pct_yr, gain)
-    
-    return max(gain/pct_yr, gain)
 
 def compute_percent_gain(
         gain: Decimal, n_shares: float, start_price: float):
@@ -59,16 +65,11 @@ def compute_annualized_percent_gain(
     return annualized, days
 
 
-def compute_percent_price_gain(
-        start_price: float, end_price: float
-        ) -> Decimal:
-    """Compute gain of price only
-
-    scale -1 to 1
-    eg. 0.1 = 10%
-
-    this doesn't include transactions...
-    should I be computing the raw gain first instead?
+def compute_annualized_gain(gain: Decimal, days: int):
+    """Amortized for the year
     """
-    pnlp = Decimal(str(end_price))/Decimal(str(start_price))+Decimal("-1")
-    return pnlp
+    pct_yr = Decimal(str(days))/Decimal("365.0")
+    if gain >= 0:
+        return min(gain/pct_yr, gain)
+    
+    return max(gain/pct_yr, gain)
