@@ -63,20 +63,23 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
         portfolio = etrader.view_portfolio(k)
         print(portfolio)
         if portfolio is not None:
-            ps = pd.DataFrame(portfolio)
-            ps.loc[:, "accountIdKey"] = k
-            all_positions.append(ps)
+            # ps = pd.DataFrame(portfolio)
+            portfolio.loc[:, "accountIdKey"] = k
+            all_positions.append(portfolio)
 
     positions = pd.concat(all_positions)
     print(positions.head())
     snake_cols = {c:camel_to_snake(c) for c in positions.columns}
     positions.rename(columns=snake_cols, inplace=True)
     positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+    positions.loc[:, "date_acquired"] = positions["date_acquired"].apply(
+        lambda d: datetime.fromtimestamp(d/1000).date())
 
     pos_cols = [
         "symbol_description", "date_acquired", "price_paid", "quantity",
-        "market_value", "account_id_key", "position_id", "timestamp"]
-    # positions.set_index("position_id")
+        "market_value", "account_id_key", "position_id", "position_lot_id",
+        "timestamp"]
+    
     return positions[pos_cols]
 
 
@@ -167,13 +170,15 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
     # not sure how to save 2 outputs actually
     open_positions.loc[:, ["annualized_pct_gain", "days_held"]] = open_positions.apply(
         lambda r: pg.compute_annualized_percent_gain(
-            r["percent_gain"], r["date_aquired"], datetime.now(timezone.utc)
+            r["percent_gain"], r["date_acquired"], datetime.now(timezone.utc)
         ),
         axis=1
     )
 
     open_positions.loc[:, "date"] = date.fromisoformat(partition_date_str)
-    return open_positions[["date", "position_id", "symbol_description", "percent_gain"]]
+    return open_positions[[
+        "date", "position_id", "symbol_description", "market_price", "percent_price_gain",
+        "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
 
 
 @asset(partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"),

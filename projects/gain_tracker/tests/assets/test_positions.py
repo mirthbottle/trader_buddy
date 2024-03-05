@@ -25,7 +25,7 @@ def test_etrade_accounts(mock_create_auth_sess, mock_list_accounts):
     )
     print(result)
     assert len(result) == 2
-    assert set(result.columns) == {'account_id'}
+    assert set(result.columns) == {'account_id', "account_id_key"}
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.create_authenticated_session')
 def test_etrade_positions(mock_create_auth_sess):

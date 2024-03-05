@@ -5,6 +5,7 @@
 import os
 import logging
 from typing import Optional
+import pandas as pd
 import webbrowser
 from rauth import OAuth1Service, OAuth1Session
 
@@ -156,7 +157,7 @@ class ETradeAPI:
     def view_portfolio(
             self, account_id_key:str, totals_required:bool=True,
             page_number:int=0
-    ):
+    ) -> Optional[pd.DataFrame]:
         """GET request for an account's portfolio holdings
 
         can't request history
@@ -184,7 +185,8 @@ class ETradeAPI:
         response = self.session.get(
             view_portfolio_url, 
             params={
-                "totalsRequired": totals_required, "pageNumber": page_number}
+                "totalsRequired": totals_required, "pageNumber": page_number,
+                "lotsRequired": True}
         )
         
         if response is None or response.status_code != 200:
@@ -200,4 +202,23 @@ class ETradeAPI:
             positions = positions + self.view_portfolio(
                 account_id_key, False, page_number=page_number+1)
         # totals = portfolio
-        return positions
+        
+        p_lots = []
+        for p in positions:
+            # request details of lots
+            # the same positionId may have more than one positionLot
+            # each has its own positionLotId with a different price
+            # and acquiredDate
+            l_resp = self.session.get(p["lotsDetails"])
+            l_data = l_resp.json()["PositionLotsResponse"]["PositionLot"]
+            p_lots = p_lots+l_data
+
+        if len(positions) > 0:
+            ps = pd.DataFrame(positions).set_index("positionId")
+            pls = pd.DataFrame(p_lots).set_index("positionId")
+            positions_df = ps.join(pls[["price", "acquiredDate", "positionLotId"]])
+            positions_df.loc[:, "pricePaid"] = positions_df["price"]
+            positions_df.loc[:, "dateAcquired"] = positions_df["acquiredDate"]
+            return positions_df.reset_index()
+        else:
+            return pd.DataFrame([])
