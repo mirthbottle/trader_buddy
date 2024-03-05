@@ -2,9 +2,12 @@
 
 """
 
+import os
 import logging
+from typing import Optional
+import pandas as pd
 import webbrowser
-from rauth import OAuth1Service
+from rauth import OAuth1Service, OAuth1Session
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -23,18 +26,23 @@ class ETradeAPI:
     """
 
     def __init__(
-            self, consumer_key: str, consumer_secret: str, 
-            environment:str="dev", callback_url:str="oob"):
+            self, environment:str="dev", callback_url:str="oob",
+            session_token:Optional[str]='', 
+            session_token_secret:Optional[str]=''):
 
-        self.consumer_key = consumer_key
-        self.consumer_secret = consumer_secret
         self.environment = environment
 
         if environment == "dev":
-            self.base_url = r"https://api.etrade.com"
-        elif environment == "prod":
+            consumer_key = os.getenv("ETRADE_SANDBOX_KEY")
+            consumer_secret = os.getenv("ETRADE_SANDBOX_SECRET")
             self.base_url = r"https://apisb.etrade.com"
-
+        elif environment == "prod":
+            consumer_key = os.getenv("ETRADE_KEY")
+            consumer_secret = os.getenv("ETRADE_SECRET")
+            self.base_url = r"https://api.etrade.com"
+        self.consumer_key = consumer_key
+        self.consumer_secret = consumer_secret
+ 
         self.req_token_url = f"{self.base_url}/oauth/request_token"
         self.auth_url = r"https://us.etrade.com/e/t/etws/authorize?key={}&token={}"
         self.access_token_url = f"{self.base_url}/oauth/access_token"
@@ -42,17 +50,13 @@ class ETradeAPI:
         self.access_token = None
         self.resource_owner_key = None
         self.session = None
+        self.session_token = session_token
+        self.session_token_secret = session_token_secret
 
-    def get_session(self):
-        """:description: Obtains the token URL from Etrade.
-
-           :param None: Takes no parameters
-           :return: Formatted Authorization URL (Access this to obtain taken)
-           :rtype: str
-           :EtradeRef: https://apisb.etrade.com/docs/api/authorization/request_token.html
-
+    def authenticate_session(self):
+        """Authenticate with consumer key and consumer secret
+        Opens web browser and user inputs the verfier 
         """
-
         # Set up session
         service = OAuth1Service(
             name="etrade",
@@ -72,13 +76,30 @@ class ETradeAPI:
         authorize_url = service.authorize_url.format(
             self.consumer_key, oauth_token)
         webbrowser.open(authorize_url)
-        text_code = input("Please accept agreement and enter verification code from browser: ")
-
+        oauth_verifier = input("Please accept agreement and enter verification code from browser: ")
+        
+        # get request token
+        # oauth_token, oauth_token_secret = service.get_request_token(
+        #     params={"oauth_callback": self.callback_url, "format": "json"})
+        
         session = service.get_auth_session(
             oauth_token, oauth_token_secret,
-            params={"oauth_verifier": text_code})
+            params={"oauth_verifier": oauth_verifier})
         self.session = session
+
+        self.session_token = session.access_token
+        self.session_token_secret = session.access_token_secret
         return session
+    
+    def create_authenticated_session(self):
+        """create Session that has been authenticated already
+        """
+        self.session = OAuth1Session(
+            self.consumer_key, self.consumer_secret,
+            access_token = self.session_token,
+            access_token_secret = self.session_token_secret)
+
+        return self.session
     
     def renew_access_token(self):
         """Renew token
@@ -91,7 +112,7 @@ class ETradeAPI:
         if response is None or response.status_code != 200:
             logger.debug("Response Body: %s", response)
             logger.info("Reauthorize session")
-            self.get_session()
+            self.authenticate_session()
             return None
 
         return response
@@ -136,7 +157,7 @@ class ETradeAPI:
     def view_portfolio(
             self, account_id_key:str, totals_required:bool=True,
             page_number:int=0
-    ):
+    ) -> Optional[pd.DataFrame]:
         """GET request for an account's portfolio holdings
 
         can't request history
@@ -164,14 +185,15 @@ class ETradeAPI:
         response = self.session.get(
             view_portfolio_url, 
             params={
-                "totalsRequired": totals_required, "pageNumber": page_number}
+                "totalsRequired": totals_required, "pageNumber": page_number,
+                "lotsRequired": True}
         )
         
         if response is None or response.status_code != 200:
             logger.debug("Response Body: %s", response)
             return None
 
-        portfolio = response.json()["PortfolioResponse"]["AccountPortfolio"]
+        portfolio = response.json()["PortfolioResponse"]["AccountPortfolio"][0]
         positions = portfolio["Position"]
 
         if page_number < portfolio["totalPages"] - 1:
@@ -180,4 +202,26 @@ class ETradeAPI:
             positions = positions + self.view_portfolio(
                 account_id_key, False, page_number=page_number+1)
         # totals = portfolio
-        return positions
+        
+        p_lots = []
+        for p in positions:
+            # request details of lots
+            # the same positionId may have more than one positionLot
+            # each has its own positionLotId with a different price
+            # and acquiredDate
+            l_resp = self.session.get(p["lotsDetails"])
+            l_data = l_resp.json()["PositionLotsResponse"]["PositionLot"]
+            p_lots = p_lots+l_data
+
+        if len(positions) > 0:
+            ps = pd.DataFrame(positions).set_index("positionId")
+            pls = pd.DataFrame(p_lots).set_index("positionId")
+            positions_df = ps.join(pls[[
+                "price", "acquiredDate", "positionLotId",
+                  "originalQty", "remainingQty"]])
+            positions_df.loc[:, "pricePaid"] = positions_df["price"]
+            positions_df.loc[:, "dateAcquired"] = positions_df["acquiredDate"]
+            positions_df.loc[:, "quantity"] = positions_df["remainingQty"]
+            return positions_df.reset_index()
+        else:
+            return pd.DataFrame([])
