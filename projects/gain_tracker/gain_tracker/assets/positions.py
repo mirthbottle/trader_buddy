@@ -9,7 +9,7 @@ import pandas as pd
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, multi_asset, AssetOut, AssetKey,
+    asset, multi_asset, Output, AssetOut, AssetKey,
     DailyPartitionsDefinition, AssetExecutionContext
     )
 
@@ -86,7 +86,7 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
 @multi_asset(
         outs={
             "open_positions": AssetOut(),
-            "closed_positions": AssetOut()
+            "closed_positions": AssetOut(is_required=False)
         },
         can_subset=True
 )
@@ -99,29 +99,34 @@ def updated_positions(
 
     positions gets updated
 
-    use positionid
-    not sure what happens to the positionid when only some shares are sold
+    use position_lot_id
+    not sure what happens to the position_lot_id when only some shares are sold
     """
     from ..definitions import defs
     try:
-        old_open_positions = defs.load_asset_value(AssetKey("open_positions")).set_index('position_id')
-        old_closed_positions = defs.load_asset_value(AssetKey("closed_positions")).set_index('position_id')
+        old_open_positions = defs.load_asset_value(
+            AssetKey("open_positions")).set_index('position_lot_id')
     except NotFound:
-        old_open_positions = pd.DataFrame([])
-        old_closed_positions = pd.DataFrame([])
+        old_open_positions = pd.DataFrame(
+            [], index=pd.Index([],name="position_lot_id"))
 
+    try:
+        old_closed_positions = defs.load_asset_value(
+            AssetKey("closed_positions")).set_index('position_lot_id')
+    except NotFound:
+        old_closed_positions = pd.DataFrame(
+            [], index=pd.Index([],name="position_lot_id"))
+
+    etrade_positions.set_index("position_lot_id", inplace=True)
     # select the positions that aren't in etrade_positions?
     new_closed_positions = old_open_positions.loc[
         ~old_open_positions.index.isin(etrade_positions.index)]#.copy()
     closed_positions = pd.concat([old_closed_positions, new_closed_positions])
 
-    # in etrade_positions but not in positions
-    new_open_positions = etrade_positions.loc[
-        ~etrade_positions.index.isin(old_open_positions.index)
-    ]
-    open_positions = pd.concat([old_open_positions, new_open_positions])
-
-    return open_positions, closed_positions
+    yield Output(etrade_positions, output_name="open_positions")
+    
+    if len(closed_positions)>0:
+        yield Output(closed_positions, output_name="closed_positions")
 
 def make_position(r):
     """
