@@ -2,6 +2,7 @@
 
 """
 
+import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone
@@ -12,6 +13,8 @@ from dagster import (
     asset, multi_asset, Output, AssetOut, AssetKey,
     DailyPartitionsDefinition, AssetExecutionContext
     )
+
+logger = logging.getLogger(__name__)
 
 import yfinance as yf
 
@@ -59,16 +62,16 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
 
     all_positions = []
     for k in keys:
-        print(k)
+        logger.info(k)
         portfolio = etrader.view_portfolio(k)
-        print(portfolio)
+        logger.debug(portfolio)
         if portfolio is not None:
             # ps = pd.DataFrame(portfolio)
             portfolio.loc[:, "accountIdKey"] = k
             all_positions.append(portfolio)
 
     positions = pd.concat(all_positions)
-    print(positions.head())
+    logger.debug(positions.head())
     snake_cols = {c:camel_to_snake(c) for c in positions.columns}
     positions.rename(columns=snake_cols, inplace=True)
     positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
@@ -77,7 +80,7 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
 
     pos_cols = [
         "symbol_description", "date_acquired", "price_paid", "quantity",
-        "market_value", "account_id_key", "position_id", "position_lot_id",
+        "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
         "timestamp"]
     
     return positions[pos_cols]
