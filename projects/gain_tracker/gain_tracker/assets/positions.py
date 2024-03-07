@@ -144,7 +144,7 @@ def make_position(r):
 
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"),
+        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
@@ -157,6 +157,7 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
 
     """
     partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
 
     # positions = open_positions.apply(make_position, axis=1)
     # positions.apply(lambda p: p.recommend_exit_long())
@@ -175,15 +176,14 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
         lambda r: pg.compute_percent_gain(r["gain"], r["quantity"], r["price_paid"]),
         axis=1
     )
-    # not sure how to save 2 outputs actually
-    open_positions.loc[:, ["annualized_pct_gain", "days_held"]] = open_positions.apply(
+    open_positions[["annualized_pct_gain", "days_held"]] = open_positions.apply(
         lambda r: pg.compute_annualized_percent_gain(
-            r["percent_gain"], r["date_acquired"], datetime.now(timezone.utc)
+            r["percent_gain"], r["date_acquired"], partition_date
         ),
-        axis=1
+        axis=1, result_type="expand"
     )
 
-    open_positions.loc[:, "date"] = date.fromisoformat(partition_date_str)
+    open_positions.loc[:, "date"] = partition_date
     return open_positions[[
         "date", "position_id", "symbol_description", "market_price", "percent_price_gain",
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]

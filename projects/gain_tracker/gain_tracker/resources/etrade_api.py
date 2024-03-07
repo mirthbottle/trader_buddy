@@ -214,11 +214,11 @@ class ETradeAPI:
             p_lots = p_lots+l_data
 
         if len(positions) > 0:
-            ps = pd.DataFrame(positions).set_index("positionId")
+            ps = pd.DataFrame(positions).set_index("positionId").drop("marketValue", axis=1)
             pls = pd.DataFrame(p_lots).set_index("positionId")
             positions_df = ps.join(pls[[
                 "price", "acquiredDate", "positionLotId",
-                  "originalQty", "remainingQty"]])
+                "marketValue", "originalQty", "remainingQty"]])
             positions_df.loc[:, "pricePaid"] = positions_df["price"]
             positions_df.loc[:, "dateAcquired"] = positions_df["acquiredDate"]
             positions_df.loc[:, "quantity"] = positions_df["remainingQty"]

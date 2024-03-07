@@ -3,9 +3,12 @@
 # change terminology to be gain
 """
 from typing import Optional
+import logging
 from datetime import datetime
 from decimal import Decimal, getcontext
 getcontext().prec = 12
+
+logger = logging.getLogger(__name__)
 
 def compute_percent_price_gain(
         start_price: float, end_price: float
@@ -46,7 +49,7 @@ def compute_percent_gain(
 
     compute as a percent of initial value of the position
     """
-    percent_gain = gain / Decimal(str(n_shares))*Decimal(str(start_price))
+    percent_gain = gain / Decimal(str(n_shares))/Decimal(str(start_price))
     
     return percent_gain
 
@@ -58,7 +61,11 @@ def compute_annualized_percent_gain(
     It's optional for the percent_gain to include transactions
     """
     days = (end_date - start_date).days
+    logger.debug('days: %d', days)
+
     pct_yr = Decimal(str(days))/Decimal("365.0")
+    if (days == 0) or (pct_yr == 0):
+        return Decimal('nan'), days
     root_yr = Decimal("1")/pct_yr
 
     annualized = (percent_gain+Decimal("1"))**root_yr+Decimal("-1")
