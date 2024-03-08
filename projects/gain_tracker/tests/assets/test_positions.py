@@ -43,6 +43,7 @@ def test_market_values():
     open_positions = pd.DataFrame(
         {
             "position_id": [0, 1, 2, 3],
+            "position_lot_id": [10, 11, 12, 13],
             "symbol_description": ["A", "B", "C", "D"],
             "price_paid": [0.1, 1, 10, 3],
             "quantity": [1, 1, 2, 1],

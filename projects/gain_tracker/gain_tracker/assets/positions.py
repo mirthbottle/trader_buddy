@@ -160,7 +160,6 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
     partition_date = date.fromisoformat(partition_date_str)
 
     # positions = open_positions.apply(make_position, axis=1)
-    # positions.apply(lambda p: p.recommend_exit_long())
     open_positions.loc[:, "market_price"] = open_positions.apply(
         lambda r: r["market_value"]/r["quantity"], axis=1
     )
@@ -185,7 +184,7 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
 
     open_positions.loc[:, "date"] = partition_date
     return open_positions[[
-        "date", "position_id", "symbol_description", "market_price", "percent_price_gain",
+        "date", "position_id", "position_lot_id", "symbol_description", "market_price", "percent_price_gain",
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
 
 
