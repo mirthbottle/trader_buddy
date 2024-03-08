@@ -14,7 +14,7 @@ from gain_tracker.resources.etrade_resource import ETrader
 
 from gain_tracker.assets.positions import (
     updated_positions, etrade_accounts, etrade_positions,
-    market_values,
+    market_values, sell_recommendations,
     benchmark_values)
 
 
@@ -31,7 +31,7 @@ defs = Definitions(
     assets=[
         # positions_count, 
         etrade_accounts, etrade_positions, updated_positions,
-        market_values,
+        market_values, sell_recommendations,
         benchmark_values],
     resources={
         "io_manager": BigQueryPandasIOManager(

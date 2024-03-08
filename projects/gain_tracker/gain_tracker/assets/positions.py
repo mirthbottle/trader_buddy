@@ -188,9 +188,10 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
 
 
-@asset(partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"),
-       metadata={"partition_expr": "DATETIME(date)"}
-       )
+@asset(
+        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
+        metadata={"partition_expr": "DATETIME(date)"}
+)
 def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
     """Pull benchmark gains
     """
@@ -200,8 +201,28 @@ def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame
     return bm_hist.reset_index()
 
 
-@asset(partitions_def=DailyPartitionsDefinition(start_date="2023-10-01"))
+@asset(
+        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
+        metadata={"partition_expr": "DATETIME(date)"})
 def sell_recommendations(context: AssetExecutionContext, market_values: pd.DataFrame):
+    """Recommend positions to sell
+
+    could add AI here
     """
-    """
-    pass
+    market_rate = 0.25
+    min_gain = 25
+    min_percent_gain = 0.07
+
+    recs = market_values.copy()
+
+    recs.loc[:, "pass_sell_filters"] = recs.apply(
+        lambda r: len(
+            [p for p in [
+                r["annualized_pct_gain"] >= market_rate,
+                r["gain"] >= min_gain,
+                r["percent_gain"] >= min_percent_gain] if p]),
+        axis=1
+    )
+    print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
+        by="annualized_pct_gain", ascending=False).head(15))
+    return recs
