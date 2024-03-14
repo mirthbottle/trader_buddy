@@ -55,6 +55,10 @@ def etrade_accounts(etrader: ETrader):
     return accounts
 
 @asset
+def etrade_transactions(etrader: ETrader, etrade_accounts: pd.DataFrame):
+    keys = etrade_accounts["account_id_key"].values
+
+@asset
 def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
     """Pull positions in etrade for each account
     """
@@ -201,6 +205,7 @@ def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame
     return bm_hist.reset_index()
 
 
+
 @asset(
         partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"})
@@ -218,9 +223,9 @@ def sell_recommendations(context: AssetExecutionContext, market_values: pd.DataF
     recs.loc[:, "pass_sell_filters"] = recs.apply(
         lambda r: len(
             [p for p in [
-                r["annualized_pct_gain"] >= market_rate,
-                r["gain"] >= min_gain,
-                r["percent_gain"] >= min_percent_gain] if p]),
+                pg.greater_than_eq(r["annualized_pct_gain"],market_rate),
+                pg.greater_than_eq(r["gain"], min_gain),
+                pg.greater_than_eq(r["percent_gain"], min_percent_gain)] if p]),
         axis=1
     )
     print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
