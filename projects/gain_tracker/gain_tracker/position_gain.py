@@ -10,6 +10,15 @@ getcontext().prec = 12
 
 logger = logging.getLogger(__name__)
 
+def greater_than_eq(a, b):
+    """a >= b
+    """
+    try:
+        return a >= b
+    except Exception as e:
+        print(e)
+        return False
+
 def compute_percent_price_gain(
         start_price: float, end_price: float
         ) -> Decimal:
