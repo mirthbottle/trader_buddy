@@ -225,3 +225,34 @@ class ETradeAPI:
             return positions_df.reset_index()
         else:
             return pd.DataFrame([])
+
+    def get_transactions(
+            self, account_id_key:str, start_date: Optional[str]=''
+    ) -> Optional[pd.DataFrame]:
+        """Retrieve transactions data
+
+        enter in start_date MMDDYYYY
+        """
+        transactions_url = f"{self.base_url}/v1/accounts/{account_id_key}/transactions.json"
+        params = {}
+        if start_date:
+            params["startDate"] = start_date
+
+        response = self.session.get(transactions_url, params=params)
+        
+        if response is None or response.status_code != 200:
+            logger.debug("Response Body: %s", response)
+            return None
+        
+        transactions = response.json()["TransactionListResponse"]["Transaction"]
+        
+        if len(transactions) == 50:
+            print("Warning: There are probably additional transactions")
+        
+        if len(transactions) > 0:
+            ts = pd.DataFrame(transactions)
+            brok_details = ts["brokerage"].apply(pd.Series)
+            ts = pd.concat([ts, brok_details], axis=1)
+            return ts
+        else:
+            return pd.DataFrame([])
