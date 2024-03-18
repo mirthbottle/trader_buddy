@@ -5,12 +5,13 @@
 import logging
 from typing import Optional
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 import pandas as pd
 
 from google.api_core.exceptions import NotFound
 from dagster import (
     asset, multi_asset, Output, AssetOut, AssetKey,
+    WeeklyPartitionsDefinition,
     DailyPartitionsDefinition, AssetExecutionContext
     )
 
@@ -54,9 +55,44 @@ def etrade_accounts(etrader: ETrader):
     accounts.rename(columns=snake_cols, inplace=True)
     return accounts
 
-@asset
-def etrade_transactions(etrader: ETrader, etrade_accounts: pd.DataFrame):
+@asset(
+        partitions_def=WeeklyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        metadata={"partition_expr": "DATETIME(transaction_date)"}
+)
+def etrade_transactions(
+    context: AssetExecutionContext, etrader: ETrader, etrade_accounts: pd.DataFrame):
+    """Get latest transactions
+
+    try weekly where the partition_date is the 
+    """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+
+    start_date_str = (partition_date - timedelta(days=7)).strftime("%m%d%Y")
+    end_date_str = partition_date.strftime("%m%d%Y")
     keys = etrade_accounts["account_id_key"].values
+
+    all_transactions = []
+    for k in keys:
+        logger.info(k)
+        ts = etrader.get_transactions(k, date_range=(start_date_str, end_date_str))
+        if ts is not None:
+            ts.loc[:, "accountIdKey"] = k
+            all_transactions.append(ts)
+
+    transactions = pd.concat(all_transactions)
+    if len(transactions) == 0:
+        # return empty table for that week
+        return pd.DataFrame(
+            [], index=pd.MultiIndex(
+                levels=[[],[]], codes=[[],[]], names=["display_symbol", "amount"]),
+            columns=["transaction_type"])
+    snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
+    transactions.rename(columns=snake_cols, inplace=True)
+    transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+    transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
+        lambda d: datetime.fromtimestamp(d/1000).date())
+    return transactions
 
 @asset
 def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
@@ -98,8 +134,9 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
         can_subset=True
 )
 def updated_positions(
-    etrade_positions: pd.DataFrame): 
-    # etrade_transactions: Optional[pd.DataFrame]):
+    etrade_positions: pd.DataFrame, 
+    etrade_transactions: pd.DataFrame
+):
     """
     needs a bigquery resource
     some positions may have closed and are not in etrade_positions anymore
@@ -125,9 +162,17 @@ def updated_positions(
             [], index=pd.Index([],name="position_lot_id"))
 
     etrade_positions.set_index("position_lot_id", inplace=True)
-    # select the positions that aren't in etrade_positions?
-    new_closed_positions = old_open_positions.loc[
-        ~old_open_positions.index.isin(etrade_positions.index)]#.copy()
+
+    # select the positions that aren't in etrade_positions
+    # if they're also in Sold transactions
+    maybe_closed = old_open_positions.loc[
+        ~old_open_positions.index.isin(etrade_positions.index)].copy()
+
+    closed_transactions = etrade_transactions.loc[
+        etrade_transactions["transaction_type"]=="Sold"].set_index(
+            ["display_symbol", "amount"])
+    new_closed_positions = maybe_closed.loc[
+        maybe_closed.index.isin(closed_transactions.index)]
     closed_positions = pd.concat([old_closed_positions, new_closed_positions])
 
     yield Output(etrade_positions, output_name="open_positions")
@@ -148,7 +193,7 @@ def make_position(r):
 
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
+        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
@@ -193,7 +238,7 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
 
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
+        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
@@ -207,7 +252,7 @@ def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame
 
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2023-10-01", end_offset=1),
+        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"})
 def sell_recommendations(context: AssetExecutionContext, market_values: pd.DataFrame):
     """Recommend positions to sell

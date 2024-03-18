@@ -13,7 +13,8 @@ from dagster import Definitions, asset
 from gain_tracker.resources.etrade_resource import ETrader
 
 from gain_tracker.assets.positions import (
-    updated_positions, etrade_accounts, etrade_positions,
+    updated_positions, 
+    etrade_accounts, etrade_positions, etrade_transactions,
     market_values, sell_recommendations,
     benchmark_values)
 
@@ -30,7 +31,8 @@ def positions_count(
 defs = Definitions(
     assets=[
         # positions_count, 
-        etrade_accounts, etrade_positions, updated_positions,
+        etrade_accounts, etrade_positions, etrade_transactions,
+        updated_positions,
         market_values, sell_recommendations,
         benchmark_values],
     resources={
