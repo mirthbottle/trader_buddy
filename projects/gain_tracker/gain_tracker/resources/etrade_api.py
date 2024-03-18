@@ -227,7 +227,8 @@ class ETradeAPI:
             return pd.DataFrame([])
 
     def get_transactions(
-            self, account_id_key:str, start_date: Optional[str]=''
+            self, account_id_key:str,
+            date_range: Optional[tuple[str, str]]=None
     ) -> Optional[pd.DataFrame]:
         """Retrieve transactions data
 
@@ -235,9 +236,11 @@ class ETradeAPI:
         """
         transactions_url = f"{self.base_url}/v1/accounts/{account_id_key}/transactions.json"
         params = {}
-        if start_date:
+        if date_range:
+            start_date, end_date = date_range
             params["startDate"] = start_date
-
+            params["endDate"] = end_date
+        print(params)
         response = self.session.get(transactions_url, params=params)
         
         if response is None or response.status_code != 200:
@@ -255,4 +258,4 @@ class ETradeAPI:
             ts = pd.concat([ts, brok_details], axis=1)
             return ts
         else:
-            return pd.DataFrame([])
+            return None
