@@ -42,6 +42,6 @@ defs = Definitions(
             dataset="gain_tracker_dev",  # optional, defaults to PUBLIC
             timeout=15.0,  # optional, defaults to None
         ),
-        "etrader": ETrader()
+        "etrader": ETrader.configure_at_launch()
     },
 )

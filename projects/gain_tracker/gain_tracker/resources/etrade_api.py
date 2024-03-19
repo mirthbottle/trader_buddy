@@ -91,13 +91,18 @@ class ETradeAPI:
         self.session_token_secret = session.access_token_secret
         return session
     
-    def create_authenticated_session(self):
+    def create_authenticated_session(
+            self, session_token: Optional[str]='', session_token_secret: Optional[str]=''):
         """create Session that has been authenticated already
         """
+        if not session_token:
+            session_token = self.session_token
+            session_token_secret = self.session_token_secret
+
         self.session = OAuth1Session(
             self.consumer_key, self.consumer_secret,
-            access_token = self.session_token,
-            access_token_secret = self.session_token_secret)
+            access_token = session_token,
+            access_token_secret = session_token_secret)
 
         return self.session
     

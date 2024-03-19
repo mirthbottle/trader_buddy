@@ -49,6 +49,9 @@ def etrade_accounts(etrader: ETrader):
 
     see if dagster can trigger opening a website and have a user input
     """
+
+    # etrader.create_authenticated_session(
+    #     config.session_token, config.session_token_secret)
     accounts = pd.DataFrame(etrader.list_accounts())
 
     snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
