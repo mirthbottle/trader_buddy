@@ -71,8 +71,8 @@ def etrade_transactions(
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
 
-    start_date_str = (partition_date - timedelta(days=7)).strftime("%m%d%Y")
-    end_date_str = partition_date.strftime("%m%d%Y")
+    end_date_str = (partition_date + timedelta(days=7)).strftime("%m%d%Y")
+    start_date_str = partition_date.strftime("%m%d%Y")
     keys = etrade_accounts["account_id_key"].values
 
     all_transactions = []
