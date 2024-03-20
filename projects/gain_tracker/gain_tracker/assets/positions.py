@@ -88,8 +88,8 @@ def etrade_transactions(
         # return empty table for that week
         return pd.DataFrame(
             [], index=pd.MultiIndex(
-                levels=[[],[]], codes=[[],[]], names=["display_symbol", "amount"]),
-            columns=["transaction_type"])
+                levels=[[],[]], codes=[[],[]], names=["display_symbol", "quantity"]),
+            columns=["transaction_type", "transaction_date", "fee", "transaction_id", "amount"])
     snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
     transactions.rename(columns=snake_cols, inplace=True)
     transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
@@ -169,13 +169,26 @@ def updated_positions(
     # select the positions that aren't in etrade_positions
     # if they're also in Sold transactions
     maybe_closed = old_open_positions.loc[
-        ~old_open_positions.index.isin(etrade_positions.index)].copy()
+        ~old_open_positions.index.isin(etrade_positions.index)].reset_index().set_index(
+            ['symbol_description', 'quantity'])
+    # TODO: also need to add positions where quantity decreased
 
-    closed_transactions = etrade_transactions.loc[
-        etrade_transactions["transaction_type"]=="Sold"].set_index(
-            ["display_symbol", "amount"])
-    new_closed_positions = maybe_closed.loc[
-        maybe_closed.index.isin(closed_transactions.index)]
+    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
+    sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1*s)
+
+    closed_transactions = (
+        sold
+        .rename(columns={
+            "display_symbol": "symbol_description", "transaction_date": "date_closed",
+            "fee": "transaction_fee"})
+        .set_index(["symbol_description", "quantity"])
+    )
+
+    new_closed_positions = pd.merge(
+        maybe_closed,
+        closed_transactions[["date_closed", "transaction_fee", "transaction_id", "amount"]],
+        left_index=True, right_index=True).reset_index().set_index("position_lot_id")
+    
     closed_positions = pd.concat([old_closed_positions, new_closed_positions])
 
     yield Output(etrade_positions, output_name="open_positions")
