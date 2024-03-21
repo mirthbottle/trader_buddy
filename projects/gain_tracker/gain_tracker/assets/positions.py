@@ -196,18 +196,6 @@ def updated_positions(
     if len(closed_positions)>0:
         yield Output(closed_positions, output_name="closed_positions")
 
-def make_position(r):
-    """
-    """
-    p = Position(
-        r["symbol_description"],
-        position_entry_price=r["price_paid"],
-        position_entry_date=r["date_acquired"],
-        position_size=r["quantity"]
-        )
-    return p
-
-
 @asset(
         partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"}
@@ -224,7 +212,6 @@ def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
 
-    # positions = open_positions.apply(make_position, axis=1)
     open_positions.loc[:, "market_price"] = open_positions.apply(
         lambda r: r["market_value"]/r["quantity"], axis=1
     )

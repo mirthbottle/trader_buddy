@@ -12,8 +12,9 @@ from gain_tracker.assets.positions import (
     market_values)
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.list_accounts')
+@patch('gain_tracker.resources.etrade_api.ETradeAPI.renew_access_token')
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.create_authenticated_session')
-def test_etrade_accounts(mock_create_auth_sess, mock_list_accounts):
+def test_etrade_accounts(mock_create_auth_sess, mock_renew_token, mock_list_accounts):
 
     test_accounts = [
         {
@@ -25,7 +26,7 @@ def test_etrade_accounts(mock_create_auth_sess, mock_list_accounts):
     mock_list_accounts.return_value = test_accounts
 
     result = etrade_accounts(
-        etrader=ETrader()
+        etrader=ETrader(session_token="xx", session_token_secret="sts")
     )
     print(result)
     assert len(result) == 2
