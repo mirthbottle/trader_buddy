@@ -8,7 +8,7 @@ import os
 import pandas as pd
 
 from dagster_gcp_pandas import BigQueryPandasIOManager
-from dagster import Definitions, asset
+from dagster import Definitions, asset, FilesystemIOManager
 
 from gain_tracker.resources.etrade_resource import ETrader
 
@@ -17,7 +17,9 @@ from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions, etrade_transactions,
     market_values, sell_recommendations,
     benchmark_values)
-
+from gain_tracker.assets.economic_indicators import (
+    inflation_data, my_gsheet
+)
 
 @asset
 def positions_count(
@@ -34,7 +36,9 @@ defs = Definitions(
         etrade_accounts, etrade_positions, etrade_transactions,
         updated_positions,
         market_values, sell_recommendations,
-        benchmark_values],
+        benchmark_values,
+        inflation_data, my_gsheet
+        ],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ["GCP_PROJECT"],  # required
@@ -42,6 +46,7 @@ defs = Definitions(
             dataset="gain_tracker_dev",  # optional, defaults to PUBLIC
             timeout=15.0,  # optional, defaults to None
         ),
+        "fs_io_manager": FilesystemIOManager(),
         "etrader": ETrader.configure_at_launch()
     },
 )
