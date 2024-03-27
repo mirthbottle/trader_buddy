@@ -109,7 +109,6 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
         portfolio = etrader.view_portfolio(k)
         logger.debug(portfolio)
         if portfolio is not None:
-            # ps = pd.DataFrame(portfolio)
             portfolio.loc[:, "accountIdKey"] = k
             all_positions.append(portfolio)
 
@@ -200,7 +199,7 @@ def updated_positions(
         partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"}
 )
-def market_values(context: AssetExecutionContext, open_positions: pd.DataFrame):
+def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
     """Market values and gains
     
     save this asset daily? ok
@@ -257,7 +256,7 @@ def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame
 @asset(
         partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
         metadata={"partition_expr": "DATETIME(date)"})
-def sell_recommendations(context: AssetExecutionContext, market_values: pd.DataFrame):
+def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
     """Recommend positions to sell
 
     could add AI here
@@ -266,7 +265,7 @@ def sell_recommendations(context: AssetExecutionContext, market_values: pd.DataF
     min_gain = 25
     min_percent_gain = 0.07
 
-    recs = market_values.copy()
+    recs = gains.copy()
 
     recs.loc[:, "pass_sell_filters"] = recs.apply(
         lambda r: len(

@@ -9,12 +9,14 @@ from unittest.mock import patch
 from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions,
-    market_values)
+    positions_scd4,
+    gains)
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.list_accounts')
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.renew_access_token')
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.create_authenticated_session')
-def test_etrade_accounts(mock_create_auth_sess, mock_renew_token, mock_list_accounts):
+def test_etrade_accounts(
+    mock_create_auth_sess, mock_renew_token, mock_list_accounts):
 
     test_accounts = [
         {
@@ -33,12 +35,32 @@ def test_etrade_accounts(mock_create_auth_sess, mock_renew_token, mock_list_acco
     assert set(result.columns) == {'account_id', "account_id_key"
     }
 
+@patch('gain_tracker.resources.etrade_api.ETradeAPI.view_portfolio')
+@patch('gain_tracker.resources.etrade_api.ETradeAPI.renew_access_token')
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.create_authenticated_session')
-def test_etrade_positions(mock_create_auth_sess):
-    pass
+def test_etrade_positions(
+    mock_create_auth_sess, mock_renew_token, mock_view_portfolio):
+    test_portfolio = pd.DataFrame({
+        "symbolDescription": ["AMD"],
+        "dateAcquired": [1703048400000],
+        "pricePaid": [90],
+        "quantity": [8],
+        "marketValue": [800],
+        "originalQty": [8],
+        "positionId": ["pid1"],
+        "positionLotId": ["pid1_2"]
+    })
+    mock_view_portfolio.return_value = test_portfolio
 
+    etrade_accounts = pd.DataFrame({"account_id_key": ["acc_1"]})
+    result = etrade_positions(
+        etrader=ETrader(session_token="xx", session_token_secret="sts"),
+        etrade_accounts=etrade_accounts
+    )
+    print(result)
+    assert len(result) == 1
 
-def test_market_values():
+def test_gains():
 
     d = datetime(2024, 1, 1, tzinfo=timezone.utc).date()
     open_positions = pd.DataFrame(
@@ -54,7 +76,7 @@ def test_market_values():
     )
     context = build_asset_context(partition_key="2024-02-01")
 
-    result = market_values(context, open_positions)
+    result = gains(context, open_positions)
     print(result)
     assert len(result) == 4
     assert "annualized_pct_gain" in result.columns
