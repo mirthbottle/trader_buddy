@@ -1,10 +1,11 @@
 """Test positions assets
 """
 
+import pytest
 import pandas as pd
 from datetime import datetime, timezone
 from dagster import build_asset_context
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.assets.positions import (
@@ -59,6 +60,102 @@ def test_etrade_positions(
     )
     print(result)
     assert len(result) == 1
+
+@pytest.fixture
+def sample_etrade_positions():
+    data = {
+        "symbol_description": ["AAPL", "GOOGL", "MSFT"],
+        "date_acquired": ["2021-01-01", "2020-05-15", "2019-11-20"],
+        "price_paid": [150.0, 2000.0, 120.0],
+        "quantity": [100.0, 50.0, 300.0],
+        "market_value": [16000.0, 100000.0, 36000.0],
+        "original_qty": [100, 50, 300],
+        "account_id_key": [101, 102, 103],
+        "position_id": [1001, 1002, 1003],
+        "position_lot_id": [1, 2, 3],
+        "timestamp": ["2021-09-01 10:00:00", "2021-09-01 11:00:00", "2021-09-01 12:00:00"]
+    }
+    yield pd.DataFrame(data)
+
+
+@pytest.fixture
+def sample_etrade_transactions():
+    data = {
+        "display_symbol": ["GOOGL", "MSFT"],
+        "quantity": [2, -3],
+        "transaction_type": ["Bought", "Sold"], 
+        "transaction_date": ["2024-02-20", "2024-03-26"],
+        "fee": [0.01, 0.01], 
+        "transaction_id": ["cc", "dd"],
+        "amount": [-1000.0, 1200.0]
+    }
+    yield pd.DataFrame(data)
+
+def test_positions_scd4_no_old_pos(
+        sample_etrade_positions, sample_etrade_transactions):
+    
+    # no old_positions or old_positions_history
+    # MSFT was sold
+    pos, pos_history = positions_scd4(
+        sample_etrade_positions, sample_etrade_transactions)
+    print(pos.value)
+    assert len(pos.value) == 3
+    # doesn't know any are sold bc there are no old_open_positions
+    print(pos_history.value)
+    assert len(pos_history.value) == 3
+    assert pos_history.value.loc[1, "change_type"] == "opened_position"
+
+def test_positions_scd4_no_old_pos_bought(
+        sample_etrade_positions, sample_etrade_transactions):
+
+    # no old_positions or old_positions_history
+    # MSFT was also bought
+    sample_etrade_transactions.loc[1, "transaction_type"] = "Bought"
+    pos, pos_history = positions_scd4(
+        sample_etrade_positions, sample_etrade_transactions)
+    print(pos.value)
+    assert len(pos.value) == 3
+    # doesn't know any are sold bc there are no old_open_positions
+    print(pos_history.value)
+    assert len(pos_history.value) == 3
+    assert "date_closed" in pos_history.value.columns
+
+@pytest.fixture
+def sample_positions_history():
+    data = {
+        "symbol_description": ["AAPL", "GOOGL", "MSFT"],
+        "date_acquired": ["2021-01-01", "2020-05-15", "2019-11-20"],
+        "price_paid": [150.0, 2000.0, 120.0],
+        "quantity": [100.0, 50.0, 300.0],
+        "market_value": [17000.0, 100100.0, 34000.0], # changed from pos
+        "original_qty": [100, 50, 300],
+        "account_id_key": [101, 102, 103],
+        "position_id": [1001, 1002, 1003],
+        "position_lot_id": [1, 2, 3],
+        "change_type": ["opened_position", "opened_position", "opened_position"],
+        "timestamp": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"]
+    }
+    yield pd.DataFrame(data)
+
+@patch('gain_tracker.definitions.defs.load_asset_value')
+def test_positions_scd4(
+        mock_load_asset_value,
+        sample_etrade_positions, sample_etrade_transactions,
+        sample_positions_history):
+
+    old_pos = sample_etrade_positions.copy(deep=True)
+    # patch in old_pos and old_pos_history
+    # MSFT was also bought
+    mock_load_asset_value.side_effect=[old_pos, sample_positions_history]
+
+    pos, pos_history = positions_scd4(
+        sample_etrade_positions, sample_etrade_transactions)
+    print(pos.value)
+    assert len(pos.value) == 3
+    # doesn't know any are sold bc there are no old_open_positions
+    print(pos_history.value)
+    print(pos_history.value.columns)
+    assert len(pos_history.value) == 6
 
 def test_gains():
 

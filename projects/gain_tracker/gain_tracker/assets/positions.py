@@ -83,13 +83,13 @@ def etrade_transactions(
             ts.loc[:, "accountIdKey"] = k
             all_transactions.append(ts)
 
-    transactions = pd.concat(all_transactions)
-    if len(transactions) == 0:
+    if len(all_transactions) == 0:
         # return empty table for that week
         return pd.DataFrame(
             [], index=pd.MultiIndex(
                 levels=[[],[]], codes=[[],[]], names=["display_symbol", "quantity"]),
             columns=["transaction_type", "transaction_date", "fee", "transaction_id", "amount"])
+    transactions = pd.concat(all_transactions)
     snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
     transactions.rename(columns=snake_cols, inplace=True)
     transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
@@ -127,6 +127,111 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
     
     return positions[pos_cols]
 
+@multi_asset(
+        outs={
+            "positions": AssetOut(),
+            "positions_history": AssetOut(),
+        },
+)
+def positions_scd4(
+    etrade_positions: pd.DataFrame,
+    etrade_transactions: pd.DataFrame,
+):
+    """SCD Type 4 positions and market_values
+
+    positions has the latest
+    positions_history adds a new line for changes
+
+    market_values changes every day - output to separate table
+    """
+    from ..definitions import defs
+
+    try:
+        old_positions = defs.load_asset_value(
+            AssetKey("positions")).set_index('position_lot_id')
+        old_positions_history = defs.load_asset_value(
+            AssetKey("positions_history")).set_index('position_lot_id')
+    except Exception as e: # NotFound:
+        old_positions = pd.DataFrame(
+            [], index=pd.Index([],name="position_lot_id"),
+            columns=[
+                "symbol_description", "date_acquired", "price_paid", 
+                "quantity", "account_id_key", "position_id", "original_qty"])
+        old_positions_history = pd.DataFrame(
+            [], index=pd.Index([],name="position_lot_id"))
+
+    etrade_positions.set_index("position_lot_id", inplace=True)
+
+    # compare the positions that are in both
+    positions_triage = etrade_positions.join(
+        old_positions[["symbol_description"]], how="outer", rsuffix="_prev"
+    )
+
+    # in etrade_positions but not in old_positions
+    new_open_positions = etrade_positions.loc[
+        positions_triage[
+            positions_triage["symbol_description_prev"].isnull()].index].copy()
+    # start positions df
+    positions = pd.concat([old_positions, new_open_positions])
+    if len(new_open_positions)>0:
+        new_open_positions.loc[:, "change_type"] = "opened_position"
+    
+    in_both = positions_triage.loc[
+        (~positions_triage[[
+            "symbol_description", "symbol_description_prev"]].isna()).all(axis=1)]
+    
+    cols_to_compare = [
+        "symbol_description", "date_acquired", "price_paid", "quantity",
+        "account_id_key", "position_id", "original_qty"]
+    diff_positions = old_positions.loc[in_both.index, cols_to_compare].compare(
+        etrade_positions.loc[in_both.index, cols_to_compare])
+    
+    updated_positions = etrade_positions.loc[diff_positions.index].copy()
+    if len(updated_positions) > 0:
+        updated_positions.loc[:, "change_type"] = "updated"
+        updated_positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+        positions.loc[updated_positions.index, cols_to_compare+["timestamp"]] = \
+            updated_positions[cols_to_compare+["timestamp"]]
+    
+    # select the positions that aren't in etrade_positions
+    # if they're also in Sold transactions
+    missing_old_positions = old_positions.loc[
+        positions_triage.loc[
+            positions_triage["symbol_description"].isnull()].index].copy()
+    
+    maybe_closed = missing_old_positions.reset_index().set_index(
+            ['symbol_description', 'quantity'])
+    # TODO: also need to add positions where quantity decreased
+
+    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
+    # cast quantity to float
+    sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
+
+    closed_transactions = (
+        sold
+        .rename(columns={
+            "display_symbol": "symbol_description", "transaction_date": "date_closed",
+            "fee": "transaction_fee"})
+        .set_index(["symbol_description", "quantity"])
+    )
+    
+    # need to add recognized_gain
+    closing_cols = ["date_closed", "transaction_fee", "transaction_id", "amount"]
+    new_closed_positions = pd.merge(
+        maybe_closed,
+        closed_transactions[closing_cols],
+        left_index=True, right_index=True).reset_index().set_index("position_lot_id")
+    if len(new_closed_positions)>0:
+        new_closed_positions.loc[:, "change_type"] = "closed_position"
+        new_closed_positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+        positions.loc[new_closed_positions.index, closing_cols+["timestamp"]] = \
+            new_closed_positions[closing_cols+["timestamp"]]
+
+    yield Output(positions, output_name="positions")
+    
+    positions_history = pd.concat([
+        old_positions_history, new_open_positions, updated_positions, new_closed_positions])
+    yield Output(positions_history, output_name="positions_history")
 
 @multi_asset(
         outs={
@@ -173,7 +278,8 @@ def updated_positions(
     # TODO: also need to add positions where quantity decreased
 
     sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
-    sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1*s)
+    if len(sold) > 0:
+        sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1*s)
 
     closed_transactions = (
         sold
