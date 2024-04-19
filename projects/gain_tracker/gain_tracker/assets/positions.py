@@ -100,6 +100,8 @@ def etrade_transactions(
 @asset
 def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
     """Pull positions in etrade for each account
+
+    timestamp is generated
     """
     keys = etrade_accounts["account_id_key"].values
 
@@ -142,9 +144,13 @@ def positions_scd4(
     positions has the latest
     positions_history adds a new line for changes
 
+    timestamp is from input assets, keep in positions and positions_history
     market_values changes every day - output to separate table
     """
     from ..definitions import defs
+    cols_to_compare = [
+        "symbol_description", "date_acquired", "price_paid", "quantity",
+        "account_id_key", "position_id", "original_qty", "market_value"]
 
     try:
         old_positions = defs.load_asset_value(
@@ -154,9 +160,7 @@ def positions_scd4(
     except Exception as e: # NotFound:
         old_positions = pd.DataFrame(
             [], index=pd.Index([],name="position_lot_id"),
-            columns=[
-                "symbol_description", "date_acquired", "price_paid", 
-                "quantity", "account_id_key", "position_id", "original_qty"])
+            columns=cols_to_compare+["timestamp"])
         old_positions_history = pd.DataFrame(
             [], index=pd.Index([],name="position_lot_id"))
 
@@ -175,21 +179,19 @@ def positions_scd4(
     positions = pd.concat([old_positions, new_open_positions])
     if len(new_open_positions)>0:
         new_open_positions.loc[:, "change_type"] = "opened_position"
-    
+        new_open_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
+        
     in_both = positions_triage.loc[
         (~positions_triage[[
             "symbol_description", "symbol_description_prev"]].isna()).all(axis=1)]
     
-    cols_to_compare = [
-        "symbol_description", "date_acquired", "price_paid", "quantity",
-        "account_id_key", "position_id", "original_qty"]
     diff_positions = old_positions.loc[in_both.index, cols_to_compare].compare(
         etrade_positions.loc[in_both.index, cols_to_compare])
     
     updated_positions = etrade_positions.loc[diff_positions.index].copy()
     if len(updated_positions) > 0:
         updated_positions.loc[:, "change_type"] = "updated"
-        updated_positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+        updated_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
         positions.loc[updated_positions.index, cols_to_compare+["timestamp"]] = \
             updated_positions[cols_to_compare+["timestamp"]]
     
@@ -210,28 +212,39 @@ def positions_scd4(
     closed_transactions = (
         sold
         .rename(columns={
-            "display_symbol": "symbol_description", "transaction_date": "date_closed",
-            "fee": "transaction_fee"})
+            "display_symbol": "symbol_description", "transaction_date": "timestamp",
+            "fee": "transaction_fee", "amount": "market_value"})
         .set_index(["symbol_description", "quantity"])
     )
     
-    # need to add recognized_gain
-    closing_cols = ["date_closed", "transaction_fee", "transaction_id", "amount"]
+    # transactions data takes precedence over data from the positions table
+    closing_cols = [
+        "timestamp", "transaction_fee", "transaction_id", "market_value"]
     new_closed_positions = pd.merge(
         maybe_closed,
         closed_transactions[closing_cols],
-        left_index=True, right_index=True).reset_index().set_index("position_lot_id")
+        left_index=True, right_index=True,
+        suffixes=("_pos", None)).reset_index().set_index("position_lot_id")
+    
     if len(new_closed_positions)>0:
         new_closed_positions.loc[:, "change_type"] = "closed_position"
-        new_closed_positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
-        positions.loc[new_closed_positions.index, closing_cols+["timestamp"]] = \
-            new_closed_positions[closing_cols+["timestamp"]]
+        new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
+        positions.loc[new_closed_positions.index, closing_cols] = \
+            new_closed_positions[closing_cols]
+        
 
-    yield Output(positions, output_name="positions")
+    yield Output(
+        positions[cols_to_compare+["timestamp"]], output_name="positions")
     
+    history_cols = cols_to_compare+[
+        "transaction_fee", "transaction_id", "change_type", "time_updated"]
     positions_history = pd.concat([
-        old_positions_history, new_open_positions, updated_positions, new_closed_positions])
-    yield Output(positions_history, output_name="positions_history")
+        old_positions_history, new_open_positions, updated_positions,
+        new_closed_positions]).reindex(
+            columns=history_cols
+        )
+    yield Output(
+        positions_history, output_name="positions_history")
 
 @multi_asset(
         outs={

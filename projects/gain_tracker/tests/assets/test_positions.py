@@ -113,12 +113,10 @@ def test_positions_scd4_no_old_pos_bought(
     sample_etrade_transactions.loc[1, "transaction_type"] = "Bought"
     pos, pos_history = positions_scd4(
         sample_etrade_positions, sample_etrade_transactions)
-    print(pos.value)
     assert len(pos.value) == 3
     # doesn't know any are sold bc there are no old_open_positions
-    print(pos_history.value)
     assert len(pos_history.value) == 3
-    assert "date_closed" in pos_history.value.columns
+    assert "transaction_fee" in pos_history.value.columns
 
 @pytest.fixture
 def sample_positions_history():
@@ -133,7 +131,8 @@ def sample_positions_history():
         "position_id": [1001, 1002, 1003],
         "position_lot_id": [1, 2, 3],
         "change_type": ["opened_position", "opened_position", "opened_position"],
-        "timestamp": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"]
+        "timestamp": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"],
+        "time_updated": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"]
     }
     yield pd.DataFrame(data)
 
@@ -143,18 +142,19 @@ def test_positions_scd4(
         sample_etrade_positions, sample_etrade_transactions,
         sample_positions_history):
 
-    old_pos = sample_etrade_positions.copy(deep=True)
+    old_pos = sample_positions_history.drop("change_type", axis=1)
     # patch in old_pos and old_pos_history
     # MSFT was also bought
-    mock_load_asset_value.side_effect=[old_pos, sample_positions_history]
+    mock_load_asset_value.side_effect=[
+        old_pos.copy(deep=True), sample_positions_history.copy(deep=True)]
 
     pos, pos_history = positions_scd4(
-        sample_etrade_positions, sample_etrade_transactions)
+        sample_etrade_positions.copy(deep=True), 
+        sample_etrade_transactions.copy(deep=True))
     print(pos.value)
     assert len(pos.value) == 3
     # doesn't know any are sold bc there are no old_open_positions
     print(pos_history.value)
-    print(pos_history.value.columns)
     assert len(pos_history.value) == 6
 
 def test_gains():
