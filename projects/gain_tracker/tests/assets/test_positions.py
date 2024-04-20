@@ -3,7 +3,7 @@
 
 import pytest
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from dagster import build_asset_context
 from unittest.mock import patch, MagicMock
 
@@ -82,12 +82,13 @@ def sample_etrade_positions():
 def sample_etrade_transactions():
     data = {
         "display_symbol": ["GOOGL", "MSFT"],
-        "quantity": [2, -3],
+        "quantity": [2, -300],
         "transaction_type": ["Bought", "Sold"], 
-        "transaction_date": ["2024-02-20", "2024-03-26"],
+        "transaction_date": [
+            date.fromisoformat("2024-02-20"), date.fromisoformat("2024-03-26")],
         "fee": [0.01, 0.01], 
         "transaction_id": ["cc", "dd"],
-        "amount": [-1000.0, 1200.0]
+        "amount": [-1000.0, 30000.0]
     }
     yield pd.DataFrame(data)
 
@@ -130,6 +131,8 @@ def sample_positions_history():
         "account_id_key": [101, 102, 103],
         "position_id": [1001, 1002, 1003],
         "position_lot_id": [1, 2, 3],
+        "transaction_id": [None, None, None],
+        "transaction_fee": [None, None, None],
         "change_type": ["opened_position", "opened_position", "opened_position"],
         "timestamp": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"],
         "time_updated": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"]
@@ -143,10 +146,29 @@ def test_positions_scd4(
         sample_positions_history):
 
     old_pos = sample_positions_history.drop("change_type", axis=1)
+
+    pos_history_add_sold = sample_positions_history.copy(deep=True)
+    pos_history_add_sold.loc[3] = pd.Series({
+        "symbol_description": "GOOGL",
+        "date_acquired": "2023-10-05",
+        "price_paid": 200,
+        "quantity": 4,
+        "market_value": 800,
+        "original_qty": 4,
+        "account_id_key": 102,
+        "position_id": 999,
+        "position_lot_id": 0,
+        "transaction_id": 500,
+        "transaction_fee": 0.2,
+        "change_type": "closed_position",
+        "timestamp": "2023-08-01 10:00:00",
+        "time_updated": "2023-08-01 10:00:00"
+    })
+
     # patch in old_pos and old_pos_history
-    # MSFT was also bought
     mock_load_asset_value.side_effect=[
-        old_pos.copy(deep=True), sample_positions_history.copy(deep=True)]
+        old_pos.copy(deep=True), sample_positions_history.copy(deep=True),
+        old_pos.copy(deep=True), pos_history_add_sold]
 
     pos, pos_history = positions_scd4(
         sample_etrade_positions.copy(deep=True), 
@@ -156,6 +178,24 @@ def test_positions_scd4(
     # doesn't know any are sold bc there are no old_open_positions
     print(pos_history.value)
     assert len(pos_history.value) == 6
+
+    # msft position is missing from new positions asset
+    # but it's in the old_positions, passed by mock_load_asset_value
+    pos_sold_msft = sample_etrade_positions.drop(2)
+    pos, pos_history = positions_scd4(
+        pos_sold_msft,
+        sample_etrade_transactions.copy(deep=True))
+    pos_history_sold = pos_history.value.reset_index()
+    print(pos.value)
+    assert len(pos.value) == 3
+    # doesn't know any are sold bc there are no old_open_positions
+    print(pos_history_sold)
+    assert len(pos_history_sold) == 7
+    assert len(pos_history_sold[
+        pos_history_sold["change_type"]=="closed_position"]) == 2
+    assert pos_history_sold.loc[6, "market_value"] == 30000
+    assert pos_history_sold.loc[6, "transaction_fee"] == 0.01
+    assert pos_history_sold.loc[6, "timestamp"] == datetime(2024, 3, 26, tzinfo=timezone.utc)
 
 def test_gains():
 

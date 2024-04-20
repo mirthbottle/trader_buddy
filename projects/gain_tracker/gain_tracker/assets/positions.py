@@ -175,6 +175,7 @@ def positions_scd4(
     new_open_positions = etrade_positions.loc[
         positions_triage[
             positions_triage["symbol_description_prev"].isnull()].index].copy()
+
     # start positions df
     positions = pd.concat([old_positions, new_open_positions])
     if len(new_open_positions)>0:
@@ -212,11 +213,13 @@ def positions_scd4(
     closed_transactions = (
         sold
         .rename(columns={
-            "display_symbol": "symbol_description", "transaction_date": "timestamp",
+            "display_symbol": "symbol_description", # "transaction_date": "timestamp",
             "fee": "transaction_fee", "amount": "market_value"})
         .set_index(["symbol_description", "quantity"])
     )
-    
+    closed_transactions.loc[:, "timestamp"] = closed_transactions[
+        "transaction_date"].apply(
+            lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
     # transactions data takes precedence over data from the positions table
     closing_cols = [
         "timestamp", "transaction_fee", "transaction_id", "market_value"]
@@ -231,13 +234,12 @@ def positions_scd4(
         new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
         positions.loc[new_closed_positions.index, closing_cols] = \
             new_closed_positions[closing_cols]
-        
 
     yield Output(
         positions[cols_to_compare+["timestamp"]], output_name="positions")
     
     history_cols = cols_to_compare+[
-        "transaction_fee", "transaction_id", "change_type", "time_updated"]
+        "timestamp", "transaction_fee", "transaction_id", "change_type", "time_updated"]
     positions_history = pd.concat([
         old_positions_history, new_open_positions, updated_positions,
         new_closed_positions]).reindex(
