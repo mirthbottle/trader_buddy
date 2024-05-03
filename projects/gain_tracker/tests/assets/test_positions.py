@@ -73,7 +73,10 @@ def sample_etrade_positions():
         "account_id_key": [101, 102, 103],
         "position_id": [1001, 1002, 1003],
         "position_lot_id": [1, 2, 3],
-        "timestamp": ["2021-09-01 10:00:00", "2021-09-01 11:00:00", "2021-09-01 12:00:00"]
+        "timestamp": [
+            datetime.fromisoformat("2021-09-01 10:00:00"), 
+            datetime.fromisoformat("2021-09-01 11:00:00"), 
+            datetime.fromisoformat("2021-09-01 12:00:00")]
     }
     yield pd.DataFrame(data)
 
@@ -134,8 +137,14 @@ def sample_positions_history():
         "transaction_id": [None, None, None],
         "transaction_fee": [None, None, None],
         "change_type": ["opened_position", "opened_position", "opened_position"],
-        "timestamp": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"],
-        "time_updated": ["2021-08-01 10:00:00", "2021-08-01 11:00:00", "2021-08-01 12:00:00"]
+        "timestamp": [
+            datetime.fromisoformat("2021-08-01 10:00:00"), 
+            datetime.fromisoformat("2021-08-01 11:00:00"), 
+            datetime.fromisoformat("2021-08-01 12:00:00")],
+        "time_updated": [
+            datetime.fromisoformat("2021-08-01 10:00:00"), 
+            datetime.fromisoformat("2021-08-01 11:00:00"), 
+            datetime.fromisoformat("2021-08-01 12:00:00")]
     }
     yield pd.DataFrame(data)
 
@@ -161,8 +170,8 @@ def test_positions_scd4(
         "transaction_id": 500,
         "transaction_fee": 0.2,
         "change_type": "closed_position",
-        "timestamp": "2023-08-01 10:00:00",
-        "time_updated": "2023-08-01 10:00:00"
+        "timestamp": datetime.fromisoformat("2023-08-01 10:00:00"),
+        "time_updated": datetime.fromisoformat("2023-08-01 10:00:00")
     })
 
     # patch in old_pos and old_pos_history
@@ -185,7 +194,7 @@ def test_positions_scd4(
     pos, pos_history = positions_scd4(
         pos_sold_msft,
         sample_etrade_transactions.copy(deep=True))
-    pos_history_sold = pos_history.value.reset_index()
+    pos_history_sold = pos_history.value
     print(pos.value)
     assert len(pos.value) == 3
     # doesn't know any are sold bc there are no old_open_positions

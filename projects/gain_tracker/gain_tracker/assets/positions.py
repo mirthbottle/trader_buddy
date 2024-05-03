@@ -95,6 +95,7 @@ def etrade_transactions(
     transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
     transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
         lambda d: datetime.fromtimestamp(d/1000).date())
+
     return transactions
 
 @asset
@@ -159,18 +160,16 @@ def positions_scd4(
             AssetKey("positions_history")).set_index('position_lot_id')
     except Exception as e: # NotFound:
         old_positions = pd.DataFrame(
-            [], index=pd.Index([],name="position_lot_id"),
+            [], index=pd.Index([],name="position_lot_id", dtype='int64'),
             columns=cols_to_compare+["timestamp"])
         old_positions_history = pd.DataFrame(
-            [], index=pd.Index([],name="position_lot_id"))
+            [], index=pd.Index([],name="position_lot_id", dtype='int64'))
 
-    etrade_positions.set_index("position_lot_id", inplace=True)
-
+    etrade_positions = etrade_positions.set_index("position_lot_id").sort_index()
     # compare the positions that are in both
     positions_triage = etrade_positions.join(
         old_positions[["symbol_description"]], how="outer", rsuffix="_prev"
     )
-
     # in etrade_positions but not in old_positions
     new_open_positions = etrade_positions.loc[
         positions_triage[
@@ -185,7 +184,6 @@ def positions_scd4(
     in_both = positions_triage.loc[
         (~positions_triage[[
             "symbol_description", "symbol_description_prev"]].isna()).all(axis=1)]
-    
     diff_positions = old_positions.loc[in_both.index, cols_to_compare].compare(
         etrade_positions.loc[in_both.index, cols_to_compare])
     
@@ -195,17 +193,15 @@ def positions_scd4(
         updated_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
         positions.loc[updated_positions.index, cols_to_compare+["timestamp"]] = \
             updated_positions[cols_to_compare+["timestamp"]]
-    
+
     # select the positions that aren't in etrade_positions
     # if they're also in Sold transactions
     missing_old_positions = old_positions.loc[
         positions_triage.loc[
             positions_triage["symbol_description"].isnull()].index].copy()
-    
     maybe_closed = missing_old_positions.reset_index().set_index(
             ['symbol_description', 'quantity'])
     # TODO: also need to add positions where quantity decreased
-
     sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
     # cast quantity to float
     sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
@@ -224,7 +220,7 @@ def positions_scd4(
     closing_cols = [
         "timestamp", "transaction_fee", "transaction_id", "market_value"]
     new_closed_positions = pd.merge(
-        maybe_closed,
+        maybe_closed, # should have position_lot_id column
         closed_transactions[closing_cols],
         left_index=True, right_index=True,
         suffixes=("_pos", None)).reset_index().set_index("position_lot_id")
@@ -234,9 +230,11 @@ def positions_scd4(
         new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
         positions.loc[new_closed_positions.index, closing_cols] = \
             new_closed_positions[closing_cols]
+        print("positions after positions closed")
+        print(positions)
 
     yield Output(
-        positions[cols_to_compare+["timestamp"]], output_name="positions")
+        positions[cols_to_compare+["timestamp"]].reset_index(), output_name="positions")
     
     history_cols = cols_to_compare+[
         "timestamp", "transaction_fee", "transaction_id", "change_type", "time_updated"]
@@ -244,7 +242,7 @@ def positions_scd4(
         old_positions_history, new_open_positions, updated_positions,
         new_closed_positions]).reindex(
             columns=history_cols
-        )
+        ).reset_index()
     yield Output(
         positions_history, output_name="positions_history")
 
