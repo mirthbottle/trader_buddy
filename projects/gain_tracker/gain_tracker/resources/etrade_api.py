@@ -91,13 +91,18 @@ class ETradeAPI:
         self.session_token_secret = session.access_token_secret
         return session
     
-    def create_authenticated_session(self):
+    def create_authenticated_session(
+            self, session_token: Optional[str]='', session_token_secret: Optional[str]=''):
         """create Session that has been authenticated already
         """
+        if not session_token:
+            session_token = self.session_token
+            session_token_secret = self.session_token_secret
+
         self.session = OAuth1Session(
             self.consumer_key, self.consumer_secret,
-            access_token = self.session_token,
-            access_token_secret = self.session_token_secret)
+            access_token = session_token,
+            access_token_secret = session_token_secret)
 
         return self.session
     
@@ -214,14 +219,48 @@ class ETradeAPI:
             p_lots = p_lots+l_data
 
         if len(positions) > 0:
-            ps = pd.DataFrame(positions).set_index("positionId")
+            ps = pd.DataFrame(positions).set_index("positionId").drop("marketValue", axis=1)
             pls = pd.DataFrame(p_lots).set_index("positionId")
             positions_df = ps.join(pls[[
                 "price", "acquiredDate", "positionLotId",
-                  "originalQty", "remainingQty"]])
+                "marketValue", "originalQty", "remainingQty"]])
             positions_df.loc[:, "pricePaid"] = positions_df["price"]
             positions_df.loc[:, "dateAcquired"] = positions_df["acquiredDate"]
             positions_df.loc[:, "quantity"] = positions_df["remainingQty"]
             return positions_df.reset_index()
         else:
             return pd.DataFrame([])
+
+    def get_transactions(
+            self, account_id_key:str,
+            date_range: Optional[tuple[str, str]]=None
+    ) -> Optional[pd.DataFrame]:
+        """Retrieve transactions data
+
+        enter in start_date MMDDYYYY
+        """
+        transactions_url = f"{self.base_url}/v1/accounts/{account_id_key}/transactions.json"
+        params = {}
+        if date_range:
+            start_date, end_date = date_range
+            params["startDate"] = start_date
+            params["endDate"] = end_date
+        print(params)
+        response = self.session.get(transactions_url, params=params)
+        
+        if response is None or response.status_code != 200:
+            logger.debug("Response Body: %s", response)
+            return None
+        
+        transactions = response.json()["TransactionListResponse"]["Transaction"]
+        
+        if len(transactions) == 50:
+            print("Warning: There are probably additional transactions")
+        
+        if len(transactions) > 0:
+            ts = pd.DataFrame(transactions)
+            brok_details = ts["brokerage"].apply(pd.Series)
+            ts = pd.concat([ts, brok_details], axis=1)
+            return ts
+        else:
+            return None
