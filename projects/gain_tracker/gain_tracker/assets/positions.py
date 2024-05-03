@@ -166,7 +166,9 @@ def positions_scd4(
             [], index=pd.Index([],name="position_lot_id", dtype='int64'))
 
     etrade_positions = etrade_positions.set_index("position_lot_id").sort_index()
+    
     # compare the positions that are in both
+    # join on position_lot_id
     positions_triage = etrade_positions.join(
         old_positions[["symbol_description"]], how="outer", rsuffix="_prev"
     )
@@ -184,15 +186,18 @@ def positions_scd4(
     in_both = positions_triage.loc[
         (~positions_triage[[
             "symbol_description", "symbol_description_prev"]].isna()).all(axis=1)]
-    diff_positions = old_positions.loc[in_both.index, cols_to_compare].compare(
-        etrade_positions.loc[in_both.index, cols_to_compare])
-    
-    updated_positions = etrade_positions.loc[diff_positions.index].copy()
-    if len(updated_positions) > 0:
-        updated_positions.loc[:, "change_type"] = "updated"
-        updated_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
-        positions.loc[updated_positions.index, cols_to_compare+["timestamp"]] = \
-            updated_positions[cols_to_compare+["timestamp"]]
+
+    if len(old_positions) > 0:
+        diff_positions = old_positions.loc[in_both.index, cols_to_compare].compare(
+            etrade_positions.loc[in_both.index, cols_to_compare])
+        updated_positions = etrade_positions.loc[diff_positions.index].copy()
+        if len(updated_positions) > 0:
+            updated_positions.loc[:, "change_type"] = "updated"
+            updated_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
+            positions.loc[updated_positions.index, cols_to_compare+["timestamp"]] = \
+                updated_positions[cols_to_compare+["timestamp"]]
+    else:
+        updated_positions = pd.DataFrame([])    
 
     # select the positions that aren't in etrade_positions
     # if they're also in Sold transactions
@@ -230,8 +235,6 @@ def positions_scd4(
         new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
         positions.loc[new_closed_positions.index, closing_cols] = \
             new_closed_positions[closing_cols]
-        print("positions after positions closed")
-        print(positions)
 
     yield Output(
         positions[cols_to_compare+["timestamp"]].reset_index(), output_name="positions")
