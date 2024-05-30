@@ -90,7 +90,7 @@ def sample_etrade_transactions():
         "transaction_date": [
             date.fromisoformat("2024-02-20"), date.fromisoformat("2024-03-26")],
         "fee": [0.01, 0.01], 
-        "transaction_id": ["cc", "dd"],
+        "transaction_id": [24, 25],
         "amount": [-1000.0, 30000.0]
     }
     yield pd.DataFrame(data)

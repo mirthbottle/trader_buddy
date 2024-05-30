@@ -92,6 +92,7 @@ def etrade_transactions(
     transactions = pd.concat(all_transactions)
     snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
     transactions.rename(columns=snake_cols, inplace=True)
+    transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
     transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
     transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
         lambda d: datetime.fromtimestamp(d/1000).date())
@@ -254,11 +255,8 @@ def positions_scd4(
     yield Output(
         positions_history, output_name="positions_history")
 
-@asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
-        metadata={"partition_expr": "DATETIME(date)"}
-)
-def open_positions(context: AssetExecutionContext, positions: pd.DataFrame):
+@asset
+def open_positions(positions: pd.DataFrame):
     """Filter positions
     """
     open_ps = positions.loc[positions["date_closed"].isnull()]
