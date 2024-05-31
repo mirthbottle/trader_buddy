@@ -1,0 +1,9 @@
+"yfinance[nospam,repair]"
+dagster
+dagster-webserver
+daster-graphql
+dagster-gcp
+dagster-gcp-pandas
+pygsheets
+# google-cloud-bigquery # dependency is already installed
+# openpyxl # (needed for opening excel files. only in a notebook currently)
