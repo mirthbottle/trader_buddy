@@ -92,6 +92,7 @@ def etrade_transactions(
     transactions = pd.concat(all_transactions)
     snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
     transactions.rename(columns=snake_cols, inplace=True)
+    transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
     transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
     transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
         lambda d: datetime.fromtimestamp(d/1000).date())
@@ -152,7 +153,9 @@ def positions_scd4(
     cols_to_compare = [
         "symbol_description", "date_acquired", "price_paid", "quantity",
         "account_id_key", "position_id", "original_qty", "market_value"]
-
+    closing_cols = [
+        "timestamp", "date_closed", "transaction_fee", "transaction_id"]
+    
     try:
         old_positions = defs.load_asset_value(
             AssetKey("positions")).set_index('position_lot_id')
@@ -161,16 +164,18 @@ def positions_scd4(
     except Exception as e: # NotFound:
         old_positions = pd.DataFrame(
             [], index=pd.Index([],name="position_lot_id", dtype='int64'),
-            columns=cols_to_compare+["timestamp"])
+            columns=cols_to_compare+closing_cols)
         old_positions_history = pd.DataFrame(
             [], index=pd.Index([],name="position_lot_id", dtype='int64'))
 
     etrade_positions = etrade_positions.set_index("position_lot_id").sort_index()
     
+    # ignore ones that were previously closed
+    old_open_positions = old_positions.loc[old_positions["date_closed"].isnull()]
     # compare the positions that are in both
     # join on position_lot_id
     positions_triage = etrade_positions.join(
-        old_positions[["symbol_description"]], how="outer", rsuffix="_prev"
+        old_open_positions[["symbol_description"]], how="outer", rsuffix="_prev"
     )
     # in etrade_positions but not in old_positions
     new_open_positions = etrade_positions.loc[
@@ -200,36 +205,39 @@ def positions_scd4(
         updated_positions = pd.DataFrame([])    
 
     # select the positions that aren't in etrade_positions
+    # and not already sold previously (date_closed is null)
     # if they're also in Sold transactions
     missing_old_positions = old_positions.loc[
         positions_triage.loc[
             positions_triage["symbol_description"].isnull()].index].copy()
-    maybe_closed = missing_old_positions.reset_index().set_index(
+    maybe_closed = missing_old_positions.loc[
+        missing_old_positions["date_closed"].isnull()].reset_index().set_index(
             ['symbol_description', 'quantity'])
     # TODO: also need to add positions where quantity decreased
     sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
     # cast quantity to float
     sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
 
+    # use the market_value from the transactions
     closed_transactions = (
         sold
         .rename(columns={
-            "display_symbol": "symbol_description", # "transaction_date": "timestamp",
-            "fee": "transaction_fee", "amount": "market_value"})
+            "display_symbol": "symbol_description",
+            "fee": "transaction_fee", "amount": "market_value",
+            "transaction_date": "date_closed"})
         .set_index(["symbol_description", "quantity"])
     )
     closed_transactions.loc[:, "timestamp"] = closed_transactions[
-        "transaction_date"].apply(
+        "date_closed"].apply(
             lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
+
     # transactions data takes precedence over data from the positions table
-    closing_cols = [
-        "timestamp", "transaction_fee", "transaction_id", "market_value"]
     new_closed_positions = pd.merge(
         maybe_closed, # should have position_lot_id column
-        closed_transactions[closing_cols],
+        closed_transactions[closing_cols+["market_value"]],
         left_index=True, right_index=True,
         suffixes=("_pos", None)).reset_index().set_index("position_lot_id")
-    
+    print(new_closed_positions)
     if len(new_closed_positions)>0:
         new_closed_positions.loc[:, "change_type"] = "closed_position"
         new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
@@ -237,10 +245,9 @@ def positions_scd4(
             new_closed_positions[closing_cols]
 
     yield Output(
-        positions[cols_to_compare+["timestamp"]].reset_index(), output_name="positions")
+        positions[cols_to_compare+closing_cols].reset_index(), output_name="positions")
     
-    history_cols = cols_to_compare+[
-        "timestamp", "transaction_fee", "transaction_id", "change_type", "time_updated"]
+    history_cols = cols_to_compare+closing_cols+["change_type", "time_updated"]
     positions_history = pd.concat([
         old_positions_history, new_open_positions, updated_positions,
         new_closed_positions]).reindex(
@@ -249,73 +256,13 @@ def positions_scd4(
     yield Output(
         positions_history, output_name="positions_history")
 
-@multi_asset(
-        outs={
-            "open_positions": AssetOut(),
-            "closed_positions": AssetOut(is_required=False)
-        },
-        can_subset=True
-)
-def updated_positions(
-    etrade_positions: pd.DataFrame, 
-    etrade_transactions: pd.DataFrame
-):
+@asset
+def open_positions(positions: pd.DataFrame):
+    """Filter positions
     """
-    needs a bigquery resource
-    some positions may have closed and are not in etrade_positions anymore
-
-    positions gets updated
-
-    use position_lot_id
-    not sure what happens to the position_lot_id when only some shares are sold
-    """
-    from ..definitions import defs
-    try:
-        old_open_positions = defs.load_asset_value(
-            AssetKey("open_positions")).set_index('position_lot_id')
-    except NotFound:
-        old_open_positions = pd.DataFrame(
-            [], index=pd.Index([],name="position_lot_id"))
-
-    try:
-        old_closed_positions = defs.load_asset_value(
-            AssetKey("closed_positions")).set_index('position_lot_id')
-    except NotFound:
-        old_closed_positions = pd.DataFrame(
-            [], index=pd.Index([],name="position_lot_id"))
-
-    etrade_positions.set_index("position_lot_id", inplace=True)
-
-    # select the positions that aren't in etrade_positions
-    # if they're also in Sold transactions
-    maybe_closed = old_open_positions.loc[
-        ~old_open_positions.index.isin(etrade_positions.index)].reset_index().set_index(
-            ['symbol_description', 'quantity'])
-    # TODO: also need to add positions where quantity decreased
-
-    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
-    if len(sold) > 0:
-        sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1*s)
-
-    closed_transactions = (
-        sold
-        .rename(columns={
-            "display_symbol": "symbol_description", "transaction_date": "date_closed",
-            "fee": "transaction_fee"})
-        .set_index(["symbol_description", "quantity"])
-    )
-
-    new_closed_positions = pd.merge(
-        maybe_closed,
-        closed_transactions[["date_closed", "transaction_fee", "transaction_id", "amount"]],
-        left_index=True, right_index=True).reset_index().set_index("position_lot_id")
+    open_ps = positions.loc[positions["date_closed"].isnull()]
     
-    closed_positions = pd.concat([old_closed_positions, new_closed_positions])
-
-    yield Output(etrade_positions, output_name="open_positions")
-    
-    if len(closed_positions)>0:
-        yield Output(closed_positions, output_name="closed_positions")
+    return open_ps
 
 @asset(
         partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
@@ -368,7 +315,7 @@ def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
 def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
     """Pull benchmark gains
     """
-    earliest_date = open_positions["position_entry_date"].min()
+    earliest_date = open_positions["date_acquired"].min()
     bm = yf.Ticker(DEFAULT_BENCHMARK_TICKER)
     bm_hist = bm.history(start=earliest_date)
     return bm_hist.reset_index()

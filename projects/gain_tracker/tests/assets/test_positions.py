@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions,
-    positions_scd4,
+    positions_scd4, open_positions,
     gains)
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.list_accounts')
@@ -90,7 +90,7 @@ def sample_etrade_transactions():
         "transaction_date": [
             date.fromisoformat("2024-02-20"), date.fromisoformat("2024-03-26")],
         "fee": [0.01, 0.01], 
-        "transaction_id": ["cc", "dd"],
+        "transaction_id": [24, 25],
         "amount": [-1000.0, 30000.0]
     }
     yield pd.DataFrame(data)
@@ -137,6 +137,7 @@ def sample_positions_history():
         "transaction_id": [None, None, None],
         "transaction_fee": [None, None, None],
         "change_type": ["opened_position", "opened_position", "opened_position"],
+        "date_closed": [None, None, None],
         "timestamp": [
             datetime.fromisoformat("2021-08-01 10:00:00"), 
             datetime.fromisoformat("2021-08-01 11:00:00"), 
@@ -170,6 +171,7 @@ def test_positions_scd4(
         "transaction_id": 500,
         "transaction_fee": 0.2,
         "change_type": "closed_position",
+        "date_closed": date.fromisoformat("2023-08-01"),
         "timestamp": datetime.fromisoformat("2023-08-01 10:00:00"),
         "time_updated": datetime.fromisoformat("2023-08-01 10:00:00")
     })
