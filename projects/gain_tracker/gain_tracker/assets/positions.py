@@ -153,7 +153,9 @@ def positions_scd4(
     cols_to_compare = [
         "symbol_description", "date_acquired", "price_paid", "quantity",
         "account_id_key", "position_id", "original_qty", "market_value"]
-
+    closing_cols = [
+        "timestamp", "date_closed", "transaction_fee", "transaction_id"]
+    
     try:
         old_positions = defs.load_asset_value(
             AssetKey("positions")).set_index('position_lot_id')
@@ -162,7 +164,7 @@ def positions_scd4(
     except Exception as e: # NotFound:
         old_positions = pd.DataFrame(
             [], index=pd.Index([],name="position_lot_id", dtype='int64'),
-            columns=cols_to_compare+["timestamp", "date_closed"])
+            columns=cols_to_compare+closing_cols)
         old_positions_history = pd.DataFrame(
             [], index=pd.Index([],name="position_lot_id", dtype='int64'))
 
@@ -203,39 +205,39 @@ def positions_scd4(
         updated_positions = pd.DataFrame([])    
 
     # select the positions that aren't in etrade_positions
-    # and not already sold previously
+    # and not already sold previously (date_closed is null)
     # if they're also in Sold transactions
     missing_old_positions = old_positions.loc[
         positions_triage.loc[
             positions_triage["symbol_description"].isnull()].index].copy()
-    maybe_closed = missing_old_positions.reset_index().set_index(
+    maybe_closed = missing_old_positions.loc[
+        missing_old_positions["date_closed"].isnull()].reset_index().set_index(
             ['symbol_description', 'quantity'])
     # TODO: also need to add positions where quantity decreased
     sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
     # cast quantity to float
     sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
 
+    # use the market_value from the transactions
     closed_transactions = (
         sold
         .rename(columns={
             "display_symbol": "symbol_description",
-            "fee": "transaction_fee", "amount": "market_value"})
+            "fee": "transaction_fee", "amount": "market_value",
+            "transaction_date": "date_closed"})
         .set_index(["symbol_description", "quantity"])
     )
-    closed_transactions.loc[:, "date_closed"] = closed_transactions["transaction_date"]
     closed_transactions.loc[:, "timestamp"] = closed_transactions[
-        "transaction_date"].apply(
+        "date_closed"].apply(
             lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
 
     # transactions data takes precedence over data from the positions table
-    closing_cols = [
-        "timestamp", "date_closed", "transaction_fee", "transaction_id", "market_value"]
     new_closed_positions = pd.merge(
         maybe_closed, # should have position_lot_id column
-        closed_transactions[closing_cols],
+        closed_transactions[closing_cols+["market_value"]],
         left_index=True, right_index=True,
         suffixes=("_pos", None)).reset_index().set_index("position_lot_id")
-    
+    print(new_closed_positions)
     if len(new_closed_positions)>0:
         new_closed_positions.loc[:, "change_type"] = "closed_position"
         new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
@@ -243,10 +245,9 @@ def positions_scd4(
             new_closed_positions[closing_cols]
 
     yield Output(
-        positions[cols_to_compare+["timestamp"]].reset_index(), output_name="positions")
+        positions[cols_to_compare+closing_cols].reset_index(), output_name="positions")
     
-    history_cols = cols_to_compare+[
-        "timestamp", "transaction_fee", "transaction_id", "change_type", "time_updated"]
+    history_cols = cols_to_compare+closing_cols+["change_type", "time_updated"]
     positions_history = pd.concat([
         old_positions_history, new_open_positions, updated_positions,
         new_closed_positions]).reindex(
