@@ -261,6 +261,8 @@ class ETradeAPI:
             ts = pd.DataFrame(transactions)
             brok_details = ts["brokerage"].apply(pd.Series)
             ts = pd.concat([ts, brok_details], axis=1)
-            return ts
+            prod_details = ts["product"].apply(pd.Series)
+            ts = pd.concat([ts, prod_details], axis=1)
+            return ts.drop(["brokerage", "product"], axis=1)
         else:
             return None

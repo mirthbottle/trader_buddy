@@ -12,7 +12,8 @@ from google.api_core.exceptions import NotFound
 from dagster import (
     asset, multi_asset, Output, AssetOut, AssetKey,
     WeeklyPartitionsDefinition,
-    DailyPartitionsDefinition, AssetExecutionContext
+    DailyPartitionsDefinition, AssetExecutionContext,
+    Config
     )
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,22 @@ def etrade_transactions(
     return transactions
 
 @asset
+def sold_transactions(
+    etrade_transactions: pd.DataFrame
+):
+    """sold etrade_transactions
+    """
+    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
+    # cast quantity to float
+    sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
+    
+    output_cols = [
+        "symbol", "transaction_date", "price", "amount", "quantity",
+        "fee", "account_id", "timestamp", "transaction_id"]
+    return sold[output_cols].set_index("transaction_id")
+
+
+@asset
 def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
     """Pull positions in etrade for each account
 
@@ -128,8 +145,8 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
         "symbol_description", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
         "timestamp"]
-    
     return positions[pos_cols]
+
 
 @multi_asset(
         outs={
@@ -222,7 +239,7 @@ def positions_scd4(
     closed_transactions = (
         sold
         .rename(columns={
-            "display_symbol": "symbol_description",
+            "symbol": "symbol_description",
             "fee": "transaction_fee", "amount": "market_value",
             "transaction_date": "date_closed"})
         .set_index(["symbol_description", "quantity"])
@@ -263,6 +280,13 @@ def open_positions(positions: pd.DataFrame):
     open_ps = positions.loc[positions["date_closed"].isnull()]
     
     return open_ps
+
+@asset
+def closed_positions(positions: pd.DataFrame):
+    """Filter positions
+    """
+    closed_ps = positions.loc[~positions["date_closed"].isnull()]
+    return closed_ps
 
 @asset(
         partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
@@ -320,7 +344,70 @@ def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame
     bm_hist = bm.history(start=earliest_date)
     return bm_hist.reset_index()
 
+class BuyRecPrevSoldConfig(Config):
+    """To customize the buy_recommendations_previously_sold asset
 
+    min_dip_percent - float between 0-1 for the % dip in market price
+    """
+    min_dip_percent: float = 0.1
+
+def get_current_price_yf(ticker:str):
+    """Use Yahoo finance to retrieve current price
+
+    ticker is passed as a str. works for US markets
+    """
+    try:
+        price = yf.Ticker(ticker).fast_info["lastPrice"]
+    except Exception as e:
+        print(f"trouble getting current price for {ticker}: {e}")
+        return None
+    return price
+
+@asset(
+        partitions_def=DailyPartitionsDefinition(start_date="2024-06-04", end_offset=1),
+        metadata={"partition_expr": "DATETIME(date)"}
+)
+def buy_recommendations_previously_sold(
+    context: AssetExecutionContext, config: BuyRecPrevSoldConfig,
+    sold_transactions: pd.DataFrame):
+    """Monitor dips in price from previously sold positions
+
+    pull price from Etrade or yahoo finance
+    there will be one rec per day, ok
+
+    ops:
+      buy_recommendations_previously_sold:
+        config:
+          min_dip_percent: 0.1
+    """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+
+    sold = sold_transactions.copy()
+    sold.rename(columns={"price": "price_sold"}, inplace=True)
+
+    sold.loc[:, "market_price"] = \
+        sold["symbol"].apply(get_current_price_yf)
+    
+    # the time that the price was retrieved
+    # but it may be after market is closed
+    # so it's not the same as the time of the market_price
+    sold.loc[:, "timestamp"] = datetime.now(timezone.utc)
+    
+    sold.loc[:, "percent_price_gain"] = sold.apply(
+        lambda r: pg.compute_percent_price_gain(
+            r["price_sold"], r["market_price"]), axis=1
+    )
+    sold.loc[:, "recommend_buy"] = sold["percent_price_gain"].apply(
+        lambda p: p <= -1*config.min_dip_percent
+    )
+    sold.loc[:, "date"] = partition_date
+
+    output_cols = [
+        "date", "symbol", "transaction_date", "price_sold", 
+        "market_price", "percent_price_gain",
+        "recommend_buy", "account_id", "timestamp", "transaction_id"]
+    return sold[output_cols].set_index("transaction_id")
 
 @asset(
         partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),

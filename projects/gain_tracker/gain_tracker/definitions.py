@@ -14,7 +14,9 @@ from gain_tracker.resources.etrade_resource import ETrader
 
 from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions, etrade_transactions,
+    sold_transactions,
     positions_scd4, open_positions, gains, sell_recommendations,
+    buy_recommendations_previously_sold,
     benchmark_values)
 from gain_tracker.assets.economic_indicators import (
     inflation_data, my_gsheet
@@ -33,8 +35,9 @@ defs = Definitions(
     assets=[
         # positions_count, 
         etrade_accounts, etrade_positions, etrade_transactions,
+        sold_transactions,
         positions_scd4, open_positions,
-        gains, sell_recommendations,
+        gains, sell_recommendations, buy_recommendations_previously_sold,
         benchmark_values,
         inflation_data, my_gsheet
         ],
