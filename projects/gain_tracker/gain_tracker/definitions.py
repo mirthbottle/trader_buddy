@@ -18,6 +18,10 @@ from gain_tracker.assets.positions import (
     positions_scd4, open_positions, gains, sell_recommendations,
     buy_recommendations_previously_sold,
     benchmark_values)
+from gain_tracker.jobs.daily_jobs import (
+    pull_etrade_job, recommendations_job
+)
+
 from gain_tracker.assets.economic_indicators import (
     inflation_data, my_gsheet
 )
@@ -41,6 +45,7 @@ defs = Definitions(
         benchmark_values,
         inflation_data, my_gsheet
         ],
+    jobs=[pull_etrade_job, recommendations_job],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ.get("GCP_PROJECT", "main-street-labs-test"),  # required
