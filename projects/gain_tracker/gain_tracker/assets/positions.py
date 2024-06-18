@@ -26,6 +26,13 @@ from .. import position_gain as pg
 from ..position import Position
 
 DEFAULT_BENCHMARK_TICKER="IVV"
+# this could be configurable by environment
+PARTITIONS_START_DATE="2024-02-04"
+
+daily_partdef = DailyPartitionsDefinition(
+    start_date=PARTITIONS_START_DATE, end_offset=1)
+weekly_partdef = WeeklyPartitionsDefinition(
+    start_date=PARTITIONS_START_DATE, end_offset=1)
 
 # name is wrong
 # positions_data = SourceAsset(key="positions_dec")
@@ -60,7 +67,7 @@ def etrade_accounts(etrader: ETrader):
     return accounts
 
 @asset(
-        partitions_def=WeeklyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=weekly_partdef,
         metadata={"partition_expr": "DATETIME(transaction_date)"}
 )
 def etrade_transactions(
@@ -289,7 +296,7 @@ def closed_positions(positions: pd.DataFrame):
     return closed_ps
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
@@ -333,7 +340,7 @@ def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
 
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
@@ -364,7 +371,7 @@ def get_current_price_yf(ticker:str):
     return price
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-06-04", end_offset=1),
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def buy_recommendations_previously_sold(
@@ -410,7 +417,7 @@ def buy_recommendations_previously_sold(
     return sold[output_cols].set_index("transaction_id")
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"})
 def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
     """Recommend positions to sell
