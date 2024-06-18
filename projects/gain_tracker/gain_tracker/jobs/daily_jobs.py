@@ -6,8 +6,8 @@ grouped by partition
 
 from dagster import define_asset_job
 
+from ..partitions import daily_partdef, weekly_partdef
 from ..assets.positions import *
-
 
 pull_etrade_job = define_asset_job(
     "pull_etrade_job", 

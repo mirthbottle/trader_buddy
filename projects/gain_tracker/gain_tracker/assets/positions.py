@@ -11,28 +11,19 @@ import pandas as pd
 from google.api_core.exceptions import NotFound
 from dagster import (
     asset, multi_asset, Output, AssetOut, AssetKey,
-    WeeklyPartitionsDefinition,
-    DailyPartitionsDefinition, AssetExecutionContext,
-    Config
+    AssetExecutionContext, Config
     )
 
 logger = logging.getLogger(__name__)
 
 import yfinance as yf
 
+from ..partitions import daily_partdef, weekly_partdef
 from ..resources.etrade_resource import ETrader
 
 from .. import position_gain as pg
-from ..position import Position
 
 DEFAULT_BENCHMARK_TICKER="IVV"
-# this could be configurable by environment
-PARTITIONS_START_DATE="2024-02-04"
-
-daily_partdef = DailyPartitionsDefinition(
-    start_date=PARTITIONS_START_DATE, end_offset=1)
-weekly_partdef = WeeklyPartitionsDefinition(
-    start_date=PARTITIONS_START_DATE, end_offset=1)
 
 # name is wrong
 # positions_data = SourceAsset(key="positions_dec")
