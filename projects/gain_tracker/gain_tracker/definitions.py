@@ -23,7 +23,7 @@ from gain_tracker.jobs.daily_jobs import (
 )
 
 from gain_tracker.assets.economic_indicators import (
-    inflation_data, my_gsheet
+    inflation_data, inflation_gsheet
 )
 
 @asset
@@ -43,7 +43,7 @@ defs = Definitions(
         positions_scd4, open_positions,
         gains, sell_recommendations, buy_recommendations_previously_sold,
         benchmark_values,
-        inflation_data, my_gsheet
+        inflation_data, inflation_gsheet
         ],
     jobs=[pull_etrade_job, recommendations_job],
     resources={
