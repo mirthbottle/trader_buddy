@@ -1,12 +1,13 @@
 """
 
 """
-
+import os
 import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 import pandas as pd
+import pygsheets
 
 from google.api_core.exceptions import NotFound
 from dagster import (
@@ -432,3 +433,31 @@ def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
     print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
         by="annualized_pct_gain", ascending=False).head(15))
     return recs
+
+@asset(
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"}
+)
+def all_recommendations(
+    context: AssetExecutionContext, 
+    sell_recommendations: pd.DataFrame,
+    buy_recommendations_previously_sold: pd.DataFrame
+):
+    """Output to gsheets
+    
+    inputs already have the `date` column
+    """
+    GOOGLE_SERVICE_FILE = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+    recs = pd.concat([
+        sell_recommendations, buy_recommendations_previously_sold])
+    
+    gc = pygsheets.authorize(service_file=GOOGLE_SERVICE_FILE)
+    sh = gc.open('trader_buddy/recommendations')
+    wks = sh[0]
+    wks.clear()
+    wks.title = "Recommendations"
+    wks.set_dataframe(recs, (1, 1))
+    context.add_output_metadata({"row_count": len(recs)})
+    return recs
+
