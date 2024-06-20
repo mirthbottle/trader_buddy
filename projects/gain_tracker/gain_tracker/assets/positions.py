@@ -404,7 +404,7 @@ def buy_recommendations_previously_sold(
 
     output_cols = [
         "date", "symbol", "transaction_date", "price_sold", 
-        "market_price", "percent_price_gain",
+        "market_price", "percent_price_gain", "quantity",
         "recommend_buy", "account_id", "timestamp", "transaction_id"]
     return sold[output_cols].set_index("transaction_id")
 
