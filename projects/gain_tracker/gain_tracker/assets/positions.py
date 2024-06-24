@@ -60,7 +60,8 @@ def etrade_accounts(etrader: ETrader):
 
 @asset(
         partitions_def=weekly_partdef,
-        metadata={"partition_expr": "DATETIME(transaction_date)"}
+        metadata={"partition_expr": "DATETIME(transaction_date)"},
+        output_required=False
 )
 def etrade_transactions(
     context: AssetExecutionContext, etrader: ETrader, etrade_accounts: pd.DataFrame):
@@ -83,21 +84,16 @@ def etrade_transactions(
             ts.loc[:, "accountIdKey"] = k
             all_transactions.append(ts)
 
-    if len(all_transactions) == 0:
-        # return empty table for that week
-        return pd.DataFrame(
-            [], index=pd.MultiIndex(
-                levels=[[],[]], codes=[[],[]], names=["display_symbol", "quantity"]),
-            columns=["transaction_type", "transaction_date", "fee", "transaction_id", "amount"])
-    transactions = pd.concat(all_transactions)
-    snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
-    transactions.rename(columns=snake_cols, inplace=True)
-    transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
-    transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
-    transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
-        lambda d: datetime.fromtimestamp(d/1000).date())
+    if len(all_transactions) > 0:
+        transactions = pd.concat(all_transactions)
+        snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
+        transactions.rename(columns=snake_cols, inplace=True)
+        transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
+        transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+        transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
+            lambda d: datetime.fromtimestamp(d/1000).date())
 
-    return transactions
+        yield transactions
 
 @asset
 def sold_transactions(
