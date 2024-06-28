@@ -1,13 +1,11 @@
 """
 
 """
-import os
 import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 import pandas as pd
-import pygsheets
 
 from google.api_core.exceptions import NotFound
 from dagster import (
@@ -21,6 +19,7 @@ import yfinance as yf
 
 from ..partitions import daily_partdef, weekly_partdef
 from ..resources.etrade_resource import ETrader
+from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
 
@@ -93,7 +92,7 @@ def etrade_transactions(
         transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
             lambda d: datetime.fromtimestamp(d/1000).date())
 
-        yield transactions
+        return transactions
 
 @asset
 def sold_transactions(
@@ -436,21 +435,20 @@ def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
 )
 def all_recommendations(
     context: AssetExecutionContext, 
+    gsheets: GSheetsResource,
     sell_recommendations: pd.DataFrame,
-    buy_recommendations_previously_sold: pd.DataFrame
+    buy_recommendations_previously_sold: pd.DataFrame,
 ):
     """Output to gsheets
     
     inputs already have the `date` column
     """
-    GOOGLE_SERVICE_FILE = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-
     recs = pd.concat([
         sell_recommendations, buy_recommendations_previously_sold])
     
-    gc = pygsheets.authorize(service_file=GOOGLE_SERVICE_FILE)
-    sh = gc.open('trader_buddy/recommendations')
-    wks = sh[0]
+    sheet_key = "18WrLUfVqPcK-N33rnCKIHO4NmjkljDS1eNKA65shkRQ"
+    
+    wks = gsheets.open_sheet_frist_tab(sheet_key)
     wks.clear()
     wks.title = "Recommendations"
     wks.set_dataframe(recs, (1, 1))

@@ -39,3 +39,10 @@ def inflation_gsheet(context, inflation_data: pd.DataFrame):
     wks.title = "Inflation Data"
     wks.set_dataframe(inflation_data, (1, 1))
     context.add_output_metadata({"row_count": len(inflation_data)})
+    model_cell = pygsheets.Cell("E2")
+    model_cell.set_number_format(
+        format_type = pygsheets.FormatType.NUMBER,
+        pattern="#####.0"
+    )
+    pygsheets.DataRange(
+        "E2", "E10", worksheet=wks).apply_format(model_cell)

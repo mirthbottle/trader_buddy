@@ -11,6 +11,7 @@ from dagster_gcp_pandas import BigQueryPandasIOManager
 from dagster import Definitions, asset, FilesystemIOManager
 
 from gain_tracker.resources.etrade_resource import ETrader
+from gain_tracker.resources.gsheets_resource import GSheetsResource
 
 from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions, etrade_transactions,
@@ -54,6 +55,8 @@ defs = Definitions(
             timeout=15.0,  # optional, defaults to None
         ),
         "fs_io_manager": FilesystemIOManager(),
-        "etrader": ETrader.configure_at_launch()
+        "etrader": ETrader.configure_at_launch(),
+        "gsheets": GSheetsResource(
+            os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
     },
 )
