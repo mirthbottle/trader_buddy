@@ -17,7 +17,7 @@ from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions, etrade_transactions,
     sold_transactions,
     positions_scd4, open_positions, gains, sell_recommendations,
-    buy_recommendations_previously_sold,
+    buy_recommendations_previously_sold, all_recommendations,
     benchmark_values)
 from gain_tracker.jobs.daily_jobs import (
     pull_etrade_job, recommendations_job
@@ -43,6 +43,7 @@ defs = Definitions(
         sold_transactions,
         positions_scd4, open_positions,
         gains, sell_recommendations, buy_recommendations_previously_sold,
+        all_recommendations,
         benchmark_values,
         inflation_data, inflation_gsheet
         ],
@@ -57,6 +58,6 @@ defs = Definitions(
         "fs_io_manager": FilesystemIOManager(),
         "etrader": ETrader.configure_at_launch(),
         "gsheets": GSheetsResource(
-            os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+            google_service_file_loc=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "service_file_key.json"))
     },
 )
