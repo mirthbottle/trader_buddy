@@ -6,6 +6,7 @@ from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 import pandas as pd
+import pygsheets
 
 from google.api_core.exceptions import NotFound
 from dagster import (
@@ -429,6 +430,19 @@ def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
         by="annualized_pct_gain", ascending=False).head(15))
     return recs
 
+def date_to_str(d):
+    if pd.notnull(d):
+        return d.isoformat()
+    else:
+        return ""
+
+def type_to_str(d):
+    if pd.notnull(d):
+        return str(d)
+    else:
+        return ""
+
+
 @asset(
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
@@ -443,15 +457,57 @@ def all_recommendations(
     
     inputs already have the `date` column
     """
+    output_cols = [
+        "date", "position_lot_id", "symbol",
+        "days_held", "market_price", 
+        "gain", "percent_price_gain", "annualized_pct_gain", 
+        "pass_sell_filters", 
+        "date_sold", "price_sold", "recommend_buy"]
+    sell_colmap = {"symbol_description": "symbol"}
+    buy_colmap = {"transaction_date": "date_sold"}
     recs = pd.concat([
-        sell_recommendations, buy_recommendations_previously_sold])
+        sell_recommendations.rename(columns=sell_colmap), 
+        buy_recommendations_previously_sold.rename(columns=buy_colmap)])[
+            output_cols]
     
+    recs_gs = recs.copy(deep=True)
+    recs_gs["date"] = recs_gs["date"].apply(date_to_str)
+    recs_gs["date_sold"] = recs_gs["date_sold"].apply(date_to_str)
+    for col in output_cols:
+        recs_gs[col] = recs_gs[col].apply(type_to_str)
+    
+
     sheet_key = "18WrLUfVqPcK-N33rnCKIHO4NmjkljDS1eNKA65shkRQ"
     
-    wks = gsheets.open_sheet_frist_tab(sheet_key)
+    wks = gsheets.open_sheet_first_tab(sheet_key)
     wks.clear()
     wks.title = "Recommendations"
-    wks.set_dataframe(recs, (1, 1))
+    wks.set_dataframe(recs_gs, (1, 1))
+
     context.add_output_metadata({"row_count": len(recs)})
+
+    pct_cell = pygsheets.Cell("G2")
+    pct_cell.set_number_format(
+        format_type=pygsheets.FormatType.PERCENT,
+        pattern="0.00%"
+    )
+
+    price_cell = pygsheets.Cell("E2")
+    price_cell.set_number_format(
+        format_type=pygsheets.FormatType.CURRENCY
+    )
+
+    last_row = len(recs)+1
+    print(last_row)
+    pygsheets.DataRange(
+        "G2", f"G{last_row}", worksheet=wks).apply_format(pct_cell)
+
+    pygsheets.DataRange(
+        "E2", f"E{last_row}", worksheet=wks).apply_format(price_cell)
+    
+    pygsheets.DataRange(
+        "K{len(sell_recommendations)+1}", 
+        f"K{last_row}", worksheet=wks).apply_format(price_cell)
+    
     return recs
 
