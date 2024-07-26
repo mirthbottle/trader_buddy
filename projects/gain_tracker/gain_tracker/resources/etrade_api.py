@@ -53,6 +53,16 @@ class ETradeAPI:
         self.session_token = session_token
         self.session_token_secret = session_token_secret
 
+    def dagster_config_input_string(self):
+        """returns string for dagster config"""
+        config_str = f"""
+etrader:
+    config:
+        session_token: {self.session_token}
+        session_token_secret: {self.session_token_secret}
+        """
+        return config_str
+    
     def authenticate_session(self):
         """Authenticate with consumer key and consumer secret
         Opens web browser and user inputs the verfier 
