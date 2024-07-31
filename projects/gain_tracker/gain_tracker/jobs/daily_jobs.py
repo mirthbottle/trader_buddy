@@ -23,7 +23,8 @@ recommendations_job = define_asset_job(
     "recommendations_job",
     selection=[
         gains, sell_recommendations,
-        buy_recommendations_previously_sold 
+        buy_recommendations_previously_sold,
+        all_recommendations 
     ],
     partitions_def=daily_partdef
 )

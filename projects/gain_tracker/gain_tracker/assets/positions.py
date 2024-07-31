@@ -426,8 +426,8 @@ def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
                 pg.greater_than_eq(r["percent_gain"], min_percent_gain)] if p]),
         axis=1
     )
-    print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
-        by="annualized_pct_gain", ascending=False).head(15))
+    # print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
+    #     by="annualized_pct_gain", ascending=False).head(15))
     return recs
 
 def date_to_str(d):
@@ -461,12 +461,21 @@ def all_recommendations(
         "date", "position_lot_id", "symbol",
         "days_held", "market_price", 
         "gain", "percent_price_gain", "annualized_pct_gain", 
-        "pass_sell_filters", 
-        "date_sold", "price_sold", "recommend_buy"]
+        "date_sold", "price_sold", "recommendation"]
+
+    sell_recommendations.loc[:, "recommendation"] = sell_recommendations[
+        "pass_sell_filters"].apply(
+            lambda f: "SELL" if f >=2 else "")
+    buy_recommendations_previously_sold.loc[:, "recommendation"] = buy_recommendations_previously_sold[
+        "recommend_buy"].apply(
+            lambda r: "BUY" if r else ""
+        )
     sell_colmap = {"symbol_description": "symbol"}
     buy_colmap = {"transaction_date": "date_sold"}
     recs = pd.concat([
-        sell_recommendations.rename(columns=sell_colmap), 
+        sell_recommendations.rename(columns=sell_colmap).sort_values(
+            by="annualized_pct_gain", ascending=False
+        ), 
         buy_recommendations_previously_sold.rename(columns=buy_colmap)])[
             output_cols]
     
