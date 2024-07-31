@@ -84,7 +84,7 @@ def sample_etrade_positions():
 @pytest.fixture
 def sample_etrade_transactions():
     data = {
-        "display_symbol": ["GOOGL", "MSFT"],
+        "symbol": ["GOOGL", "MSFT"],
         "quantity": [2, -300],
         "transaction_type": ["Bought", "Sold"], 
         "transaction_date": [

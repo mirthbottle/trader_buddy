@@ -7,9 +7,9 @@
 - run dagster
 
 ```
-set +a
-source ../../jupyter-notebooks/.env
 set -a
+source ../../jupyter-notebooks/.env
+set +a
 
 dagster dev -f gain_tracker/definitions.py
 ```

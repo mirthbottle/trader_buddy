@@ -1,28 +1,28 @@
 """
 
 """
-
 import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 import pandas as pd
+import pygsheets
 
 from google.api_core.exceptions import NotFound
 from dagster import (
     asset, multi_asset, Output, AssetOut, AssetKey,
-    WeeklyPartitionsDefinition,
-    DailyPartitionsDefinition, AssetExecutionContext
+    AssetExecutionContext, Config
     )
 
 logger = logging.getLogger(__name__)
 
 import yfinance as yf
 
+from ..partitions import daily_partdef, weekly_partdef
 from ..resources.etrade_resource import ETrader
+from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
-from ..position import Position
 
 DEFAULT_BENCHMARK_TICKER="IVV"
 
@@ -59,8 +59,9 @@ def etrade_accounts(etrader: ETrader):
     return accounts
 
 @asset(
-        partitions_def=WeeklyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
-        metadata={"partition_expr": "DATETIME(transaction_date)"}
+        partitions_def=weekly_partdef,
+        metadata={"partition_expr": "DATETIME(transaction_date)"},
+        output_required=False
 )
 def etrade_transactions(
     context: AssetExecutionContext, etrader: ETrader, etrade_accounts: pd.DataFrame):
@@ -83,21 +84,32 @@ def etrade_transactions(
             ts.loc[:, "accountIdKey"] = k
             all_transactions.append(ts)
 
-    if len(all_transactions) == 0:
-        # return empty table for that week
-        return pd.DataFrame(
-            [], index=pd.MultiIndex(
-                levels=[[],[]], codes=[[],[]], names=["display_symbol", "quantity"]),
-            columns=["transaction_type", "transaction_date", "fee", "transaction_id", "amount"])
-    transactions = pd.concat(all_transactions)
-    snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
-    transactions.rename(columns=snake_cols, inplace=True)
-    transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
-    transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
-    transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
-        lambda d: datetime.fromtimestamp(d/1000).date())
+    if len(all_transactions) > 0:
+        transactions = pd.concat(all_transactions)
+        snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
+        transactions.rename(columns=snake_cols, inplace=True)
+        transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
+        transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+        transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
+            lambda d: datetime.fromtimestamp(d/1000).date())
 
-    return transactions
+        return transactions
+
+@asset
+def sold_transactions(
+    etrade_transactions: pd.DataFrame
+):
+    """sold etrade_transactions
+    """
+    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
+    # cast quantity to float
+    sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
+    
+    output_cols = [
+        "symbol", "transaction_date", "price", "amount", "quantity",
+        "fee", "account_id", "timestamp", "transaction_id"]
+    return sold[output_cols].set_index("transaction_id")
+
 
 @asset
 def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
@@ -128,8 +140,8 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
         "symbol_description", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
         "timestamp"]
-    
     return positions[pos_cols]
+
 
 @multi_asset(
         outs={
@@ -222,7 +234,7 @@ def positions_scd4(
     closed_transactions = (
         sold
         .rename(columns={
-            "display_symbol": "symbol_description",
+            "symbol": "symbol_description",
             "fee": "transaction_fee", "amount": "market_value",
             "transaction_date": "date_closed"})
         .set_index(["symbol_description", "quantity"])
@@ -264,8 +276,15 @@ def open_positions(positions: pd.DataFrame):
     
     return open_ps
 
+@asset
+def closed_positions(positions: pd.DataFrame):
+    """Filter positions
+    """
+    closed_ps = positions.loc[~positions["date_closed"].isnull()]
+    return closed_ps
+
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
@@ -309,7 +328,7 @@ def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
 
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
@@ -320,10 +339,73 @@ def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame
     bm_hist = bm.history(start=earliest_date)
     return bm_hist.reset_index()
 
+class BuyRecPrevSoldConfig(Config):
+    """To customize the buy_recommendations_previously_sold asset
 
+    min_dip_percent - float between 0-1 for the % dip in market price
+    """
+    min_dip_percent: float = 0.1
+
+def get_current_price_yf(ticker:str):
+    """Use Yahoo finance to retrieve current price
+
+    ticker is passed as a str. works for US markets
+    """
+    try:
+        price = yf.Ticker(ticker).fast_info["lastPrice"]
+    except Exception as e:
+        print(f"trouble getting current price for {ticker}: {e}")
+        return None
+    return price
 
 @asset(
-        partitions_def=DailyPartitionsDefinition(start_date="2024-02-04", end_offset=1),
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"}
+)
+def buy_recommendations_previously_sold(
+    context: AssetExecutionContext, config: BuyRecPrevSoldConfig,
+    sold_transactions: pd.DataFrame):
+    """Monitor dips in price from previously sold positions
+
+    pull price from Etrade or yahoo finance
+    there will be one rec per day, ok
+
+    ops:
+      buy_recommendations_previously_sold:
+        config:
+          min_dip_percent: 0.1
+    """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+
+    sold = sold_transactions.copy()
+    sold.rename(columns={"price": "price_sold"}, inplace=True)
+
+    sold.loc[:, "market_price"] = \
+        sold["symbol"].apply(get_current_price_yf)
+    
+    # the time that the price was retrieved
+    # but it may be after market is closed
+    # so it's not the same as the time of the market_price
+    sold.loc[:, "timestamp"] = datetime.now(timezone.utc)
+    
+    sold.loc[:, "percent_price_gain"] = sold.apply(
+        lambda r: pg.compute_percent_price_gain(
+            r["price_sold"], r["market_price"]), axis=1
+    )
+    sold.loc[:, "recommend_buy"] = sold["percent_price_gain"].apply(
+        lambda p: p <= -1*config.min_dip_percent
+    )
+    sold.loc[:, "date"] = partition_date
+
+    output_cols = [
+        "date", "symbol", "transaction_date", "price_sold", 
+        "market_price", "percent_price_gain", "quantity",
+        "recommend_buy", "account_id", "timestamp", "transaction_id"]
+    return sold[output_cols].set_index("transaction_id")
+
+@asset(
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"})
 def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
     """Recommend positions to sell
@@ -344,6 +426,97 @@ def sell_recommendations(context: AssetExecutionContext, gains: pd.DataFrame):
                 pg.greater_than_eq(r["percent_gain"], min_percent_gain)] if p]),
         axis=1
     )
-    print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
-        by="annualized_pct_gain", ascending=False).head(15))
+    # print(recs.loc[recs["pass_sell_filters"]>0].sort_values(
+    #     by="annualized_pct_gain", ascending=False).head(15))
     return recs
+
+def date_to_str(d):
+    if pd.notnull(d):
+        return d.isoformat()
+    else:
+        return ""
+
+def type_to_str(d):
+    if pd.notnull(d):
+        return str(d)
+    else:
+        return ""
+
+
+@asset(
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"}
+)
+def all_recommendations(
+    context: AssetExecutionContext, 
+    gsheets: GSheetsResource,
+    sell_recommendations: pd.DataFrame,
+    buy_recommendations_previously_sold: pd.DataFrame,
+):
+    """Output to gsheets
+    
+    inputs already have the `date` column
+    """
+    output_cols = [
+        "date", "position_lot_id", "symbol",
+        "days_held", "market_price", 
+        "gain", "percent_price_gain", "annualized_pct_gain", 
+        "date_sold", "price_sold", "recommendation"]
+
+    sell_recommendations.loc[:, "recommendation"] = sell_recommendations[
+        "pass_sell_filters"].apply(
+            lambda f: "SELL" if f >=2 else "")
+    buy_recommendations_previously_sold.loc[:, "recommendation"] = buy_recommendations_previously_sold[
+        "recommend_buy"].apply(
+            lambda r: "BUY" if r else ""
+        )
+    sell_colmap = {"symbol_description": "symbol"}
+    buy_colmap = {"transaction_date": "date_sold"}
+    recs = pd.concat([
+        sell_recommendations.rename(columns=sell_colmap).sort_values(
+            by="annualized_pct_gain", ascending=False
+        ), 
+        buy_recommendations_previously_sold.rename(columns=buy_colmap)])[
+            output_cols]
+    
+    recs_gs = recs.copy(deep=True)
+    recs_gs["date"] = recs_gs["date"].apply(date_to_str)
+    recs_gs["date_sold"] = recs_gs["date_sold"].apply(date_to_str)
+    for col in output_cols:
+        recs_gs[col] = recs_gs[col].apply(type_to_str)
+    
+
+    sheet_key = "18WrLUfVqPcK-N33rnCKIHO4NmjkljDS1eNKA65shkRQ"
+    
+    wks = gsheets.open_sheet_first_tab(sheet_key)
+    wks.clear()
+    wks.title = "Recommendations"
+    wks.set_dataframe(recs_gs, (1, 1))
+
+    context.add_output_metadata({"row_count": len(recs)})
+
+    pct_cell = pygsheets.Cell("G2")
+    pct_cell.set_number_format(
+        format_type=pygsheets.FormatType.PERCENT,
+        pattern="0.00%"
+    )
+
+    price_cell = pygsheets.Cell("E2")
+    price_cell.set_number_format(
+        format_type=pygsheets.FormatType.CURRENCY
+    )
+
+    last_row = len(recs)+1
+    print(last_row)
+    pygsheets.DataRange(
+        "G2", f"G{last_row}", worksheet=wks).apply_format(pct_cell)
+
+    pygsheets.DataRange(
+        "E2", f"E{last_row}", worksheet=wks).apply_format(price_cell)
+    
+    pygsheets.DataRange(
+        "K{len(sell_recommendations)+1}", 
+        f"K{last_row}", worksheet=wks).apply_format(price_cell)
+    
+    return recs
+
