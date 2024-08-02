@@ -12,7 +12,7 @@ from ..assets.positions import *
 pull_etrade_job = define_asset_job(
     "pull_etrade_job", 
     selection=[
-        etrade_accounts, etrade_transactions, etrade_positions,
+        etrade_transactions,
         sold_transactions,
         positions_scd4, open_positions,
     ],

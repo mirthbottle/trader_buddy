@@ -11,7 +11,7 @@ import pygsheets
 from google.api_core.exceptions import NotFound
 from dagster import (
     asset, multi_asset, Output, AssetOut, AssetKey,
-    AssetExecutionContext, Config
+    AssetExecutionContext, Config,
     )
 
 logger = logging.getLogger(__name__)
@@ -43,13 +43,26 @@ def camel_to_snake(camel_case):
     return snake_case
 
 
-@asset
-def etrade_accounts(etrader: ETrader):
+@asset(
+        output_required=False,
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"},
+)
+def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     """Pull accounts in etrade
 
     see if dagster can trigger opening a website and have a user input
-    """
 
+    check if today utc is still partition_date
+    """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+    
+    today_utc = datetime.now(timezone.utc).date()
+    print(today_utc)
+
+    if today_utc != partition_date:
+        raise ValueError(f"today {today_utc} is not {partition_date_str}")
     # etrader.create_authenticated_session(
     #     config.session_token, config.session_token_secret)
     accounts = pd.DataFrame(etrader.list_accounts())
@@ -57,6 +70,8 @@ def etrade_accounts(etrader: ETrader):
     snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
     accounts.rename(columns=snake_cols, inplace=True)
     return accounts
+
+        
 
 @asset(
         partitions_def=weekly_partdef,
@@ -111,8 +126,12 @@ def sold_transactions(
     return sold[output_cols].set_index("transaction_id")
 
 
-@asset
-def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
+@asset(
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"}
+)
+def etrade_positions(
+    context: AssetExecutionContext, etrader: ETrader, etrade_accounts: pd.DataFrame):
     """Pull positions in etrade for each account
 
     timestamp is generated
