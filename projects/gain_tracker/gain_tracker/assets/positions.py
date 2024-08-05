@@ -10,7 +10,7 @@ import pygsheets
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, AssetDep, TimeWindowPartitionMapping,
+    asset, AssetIn, TimeWindowPartitionMapping,
     # multi_asset, Output, AssetOut, AssetKey,
     AllPartitionMapping,
     AssetExecutionContext, Config,
@@ -56,6 +56,8 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     see if dagster can trigger opening a website and have a user input
 
     check if today utc is still partition_date
+
+    actually this could be a SCD
     """
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
@@ -71,6 +73,8 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
 
     snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
     accounts.rename(columns=snake_cols, inplace=True)
+    accounts.loc[:, "date"] = partition_date
+
     return accounts
 
         
@@ -185,15 +189,13 @@ def etrade_positions(
 
 @asset(
         partitions_def=weekly_partdef,
-        deps=[
-            AssetDep(
-                etrade_positions,
+        ins={
+            "etrade_positions": AssetIn(
                 partition_mapping=TimeWindowPartitionMapping(
-                    start_offset=-1, end_offset=7
-                ),
-            )
-        ],
-        metadata={"partition_expr": "DATETIME(transaction_date)"},
+                    start_offset=-1, end_offset=7)
+            ),
+        },
+        metadata={"partition_expr": "DATETIME(date_closed)"},
         output_required=False
 )
 def closed_positions(
@@ -312,12 +314,11 @@ def get_current_price_yf(ticker:str):
 @asset(
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"},
-        deps=[
-            AssetDep(
-                sold_transactions,
+        ins={
+            "sold_transactions": AssetIn(
                 partition_mapping=AllPartitionMapping()
             )
-        ]
+        }
 )
 def buy_recommendations_previously_sold(
     context: AssetExecutionContext, config: BuyRecPrevSoldConfig,
