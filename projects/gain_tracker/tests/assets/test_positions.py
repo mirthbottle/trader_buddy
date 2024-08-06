@@ -106,33 +106,48 @@ def sample_etrade_transactions():
     }
     yield pd.DataFrame(data)
 
+@pytest.fixture
+def sample_sold_transactions():
+    data = {
+        "symbol": ["MSFT"],
+        "quantity": [300],
+        "transaction_type": ["Sold"], 
+        "transaction_date": [
+            date.fromisoformat("2024-03-26")],
+        "fee": [0.01], 
+        "transaction_id": [25],
+        "amount": [30000.0]
+    }
+    yield pd.DataFrame(data)
 
 def test_closed_positions(
-        sample_etrade_positions, sample_etrade_transactions):
+        sample_etrade_positions, sample_sold_transactions):
 
     result = closed_positions(
+        sample_sold_transactions.copy(deep=True),
         sample_etrade_positions.copy(deep=True), 
-        sample_etrade_transactions.copy(deep=True))
-    print(result)
-    assert len(result) == 0
-    # doesn't know any are sold bc there are no old_open_positions
-    
-    # msft position is missing from new positions asset
-    # but it's in the old_positions, passed by mock_load_asset_value
-    pos_sold_msft = sample_etrade_positions.drop(2)
-    result = closed_positions(
-        pos_sold_msft,
-        sample_etrade_transactions.copy(deep=True))
+    )
     print(result)
     assert len(result) == 1
     assert result.loc[0, "market_value"] == 30000
     assert result.loc[0, "transaction_fee"] == 0.01
     assert result.loc[0, "timestamp"] == datetime(2024, 3, 26, tzinfo=timezone.utc)
 
+    no_msft_pos = sample_etrade_positions.drop(2)
+    result = closed_positions(
+        sample_sold_transactions.copy(deep=True),
+        no_msft_pos,
+    )
+    print(result)
+    assert result is None
+
 def test_gains():
 
     d = datetime(2024, 1, 1, tzinfo=timezone.utc).date()
-    open_positions = pd.DataFrame(
+    part_date = datetime(2024, 2, 1, tzinfo=timezone.utc).date()
+    part_date_str = part_date.isoformat()
+
+    positions = pd.DataFrame(
         {
             "position_id": [0, 1, 2, 3],
             "position_lot_id": [10, 11, 12, 13],
@@ -140,12 +155,13 @@ def test_gains():
             "price_paid": [0.1, 1, 10, 3],
             "quantity": [1, 1, 2, 1],
             "market_value": [0.14, 1.1, 20, 3.3],
-            "date_acquired": [d, d, d, d]
+            "date_acquired": 4*[d],
+            "date": 4*[part_date]
         }
     )
-    context = build_asset_context(partition_key="2024-02-01")
+    context = build_asset_context(partition_key=part_date_str)
 
-    result = gains(context, open_positions)
+    result = gains(context, positions)
     print(result)
     assert len(result) == 4
     assert "annualized_pct_gain" in result.columns
