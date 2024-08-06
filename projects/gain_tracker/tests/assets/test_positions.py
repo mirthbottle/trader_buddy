@@ -9,13 +9,14 @@ from unittest.mock import patch, MagicMock
 
 from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.assets.positions import (
+    PT_INFO,
     etrade_accounts, etrade_positions, etrade_transactions,
     sold_transactions, closed_positions,
     gains, buy_recommendations_previously_sold, sell_recommendations)
 
-TODAY_UTC = datetime.now(timezone.utc).date()
-TODAY_UTC_STR = TODAY_UTC.isoformat()
-print(TODAY_UTC_STR)
+TODAY_LOC = datetime.now(tz=PT_INFO).date()
+TODAY_LOC_STR = TODAY_LOC.isoformat()
+print(TODAY_LOC_STR)
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.list_accounts')
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.renew_access_token')
@@ -31,7 +32,7 @@ def test_etrade_accounts(
             'accountId': '2',
             'accountIdKey': 'Xab'}]
     mock_list_accounts.return_value = test_accounts
-    context = build_asset_context(partition_key=TODAY_UTC_STR)
+    context = build_asset_context(partition_key=TODAY_LOC_STR)
 
     result = etrade_accounts(
         context,
@@ -60,8 +61,8 @@ def test_etrade_positions(
     mock_view_portfolio.return_value = test_portfolio
 
     etrade_accounts = pd.DataFrame({
-        "account_id_key": ["acc_1"], "date": TODAY_UTC})
-    context = build_asset_context(partition_key=TODAY_UTC_STR)
+        "account_id_key": ["acc_1"], "date": TODAY_LOC})
+    context = build_asset_context(partition_key=TODAY_LOC_STR)
 
     result = etrade_positions(
         context,

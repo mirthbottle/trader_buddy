@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import pandas as pd
 import pygsheets
 
@@ -27,6 +28,7 @@ from ..resources.gsheets_resource import GSheetsResource
 from .. import position_gain as pg
 
 DEFAULT_BENCHMARK_TICKER="IVV"
+PT_INFO = ZoneInfo("America/Los_Angeles")
 
 # name is wrong
 # positions_data = SourceAsset(key="positions_dec")
@@ -55,18 +57,18 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
 
     see if dagster can trigger opening a website and have a user input
 
-    check if today utc is still partition_date
+    check if today local time is still partition_date
 
     actually this could be a SCD
     """
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
     
-    today_utc = datetime.now(timezone.utc).date()
-    print(today_utc)
+    today_loc = datetime.now(tz=PT_INFO).date()
+    print(today_loc)
 
-    if today_utc != partition_date:
-        raise ValueError(f"today {today_utc} is not {partition_date_str}")
+    if today_loc != partition_date:
+        raise ValueError(f"today {today_loc} is not {partition_date_str}")
     # etrader.create_authenticated_session(
     #     config.session_token, config.session_token_secret)
     accounts = pd.DataFrame(etrader.list_accounts())
@@ -76,8 +78,6 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     accounts.loc[:, "date"] = partition_date
 
     return accounts
-
-        
 
 @asset(
         partitions_def=weekly_partdef,
@@ -155,11 +155,11 @@ def etrade_positions(
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
     
-    today_utc = datetime.now(timezone.utc).date()
-    print(today_utc)
+    today_loc = datetime.now(tz=PT_INFO).date()
+    print(today_loc)
 
-    if today_utc != partition_date:
-        raise ValueError(f"today {today_utc} is not {partition_date_str}")
+    if today_loc != partition_date:
+        raise ValueError(f"today {today_loc} is not {partition_date_str}")
 
     keys = etrade_accounts["account_id_key"].values
 
