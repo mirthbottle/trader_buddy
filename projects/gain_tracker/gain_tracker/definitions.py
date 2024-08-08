@@ -36,6 +36,11 @@ def positions_count(
     print(len(positions_dec))
     return positions_dec
 
+if os.getenv("ENV", "dev") == "dev":
+    BQ_DATASET = "gain_tracker_dev"
+else:
+    BQ_DATASET = "gain_tracker"
+
 defs = Definitions(
     assets=[
         # positions_count, 
@@ -52,7 +57,7 @@ defs = Definitions(
         "io_manager": BigQueryPandasIOManager(
             project=os.environ.get("GCP_PROJECT", "main-street-labs-test"),  # required
             # location="us-west1",  # optional, defaults to the default location for the project - see https://cloud.google.com/bigquery/docs/locations for a list of locations
-            dataset="gain_tracker_dev",  # optional, defaults to PUBLIC
+            dataset=BQ_DATASET,  # optional, defaults to PUBLIC
             timeout=15.0,  # optional, defaults to None
         ),
         "fs_io_manager": FilesystemIOManager(),
