@@ -82,6 +82,13 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
 @asset(
         partitions_def=weekly_partdef,
         metadata={"partition_expr": "DATETIME(transaction_date)"},
+        ins={
+            "etrade_accounts": AssetIn(
+                partition_mapping=TimeWindowPartitionMapping(
+                    allow_nonexistent_upstream_partitions=True
+                )
+            )
+        },
         output_required=False
 )
 def etrade_transactions(
