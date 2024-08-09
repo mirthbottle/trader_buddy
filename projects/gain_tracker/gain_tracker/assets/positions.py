@@ -192,7 +192,8 @@ def etrade_positions(
         ins={
             "etrade_positions": AssetIn(
                 partition_mapping=TimeWindowPartitionMapping(
-                    start_offset=-1, end_offset=7)
+                    start_offset=-1, end_offset=7,
+                    allow_nonexistent_upstream_partitions=True)
             ),
         },
         metadata={"partition_expr": "DATETIME(date_closed)"},
