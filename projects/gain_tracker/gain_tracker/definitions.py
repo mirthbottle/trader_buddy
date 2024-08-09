@@ -40,6 +40,7 @@ if os.getenv("ENV", "dev") == "dev":
     BQ_DATASET = "gain_tracker_dev"
 else:
     BQ_DATASET = "gain_tracker"
+print(BQ_DATASET)
 
 defs = Definitions(
     assets=[
