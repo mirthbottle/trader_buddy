@@ -5,13 +5,16 @@ import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import pandas as pd
 import pygsheets
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, multi_asset, Output, AssetOut, AssetKey,
-    AssetExecutionContext, Config
+    asset, AssetIn, TimeWindowPartitionMapping,
+    # multi_asset, Output, AssetOut, AssetKey,
+    AllPartitionMapping,
+    AssetExecutionContext, Config,
     )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,7 @@ from ..resources.gsheets_resource import GSheetsResource
 from .. import position_gain as pg
 
 DEFAULT_BENCHMARK_TICKER="IVV"
+PT_INFO = ZoneInfo("America/Los_Angeles")
 
 # name is wrong
 # positions_data = SourceAsset(key="positions_dec")
@@ -43,24 +47,48 @@ def camel_to_snake(camel_case):
     return snake_case
 
 
-@asset
-def etrade_accounts(etrader: ETrader):
+@asset(
+        output_required=False,
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"},
+)
+def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     """Pull accounts in etrade
 
     see if dagster can trigger opening a website and have a user input
-    """
 
+    check if today local time is still partition_date
+
+    actually this could be a SCD
+    """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+    
+    today_loc = datetime.now(tz=PT_INFO).date()
+    print(today_loc)
+
+    if today_loc != partition_date:
+        raise ValueError(f"today {today_loc} is not {partition_date_str}")
     # etrader.create_authenticated_session(
     #     config.session_token, config.session_token_secret)
     accounts = pd.DataFrame(etrader.list_accounts())
 
     snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
     accounts.rename(columns=snake_cols, inplace=True)
+    accounts.loc[:, "date"] = partition_date
+
     return accounts
 
 @asset(
         partitions_def=weekly_partdef,
         metadata={"partition_expr": "DATETIME(transaction_date)"},
+        ins={
+            "etrade_accounts": AssetIn(
+                partition_mapping=TimeWindowPartitionMapping(
+                    allow_nonexistent_upstream_partitions=True
+                )
+            )
+        },
         output_required=False
 )
 def etrade_transactions(
@@ -95,8 +123,13 @@ def etrade_transactions(
 
         return transactions
 
-@asset
+@asset(
+        partitions_def=weekly_partdef,
+        metadata={"partition_expr": "DATETIME(transaction_date)"},
+        output_required=False
+)
 def sold_transactions(
+    context: AssetExecutionContext,
     etrade_transactions: pd.DataFrame
 ):
     """sold etrade_transactions
@@ -106,17 +139,35 @@ def sold_transactions(
     sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
     
     output_cols = [
-        "symbol", "transaction_date", "price", "amount", "quantity",
+        "transaction_id", "symbol", "transaction_date", "price", "amount", "quantity",
         "fee", "account_id", "timestamp", "transaction_id"]
-    return sold[output_cols].set_index("transaction_id")
+    
+    if len(sold) > 0:
+        return sold[output_cols]
 
 
-@asset
-def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
+@asset(
+        output_required=False,
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date)"}
+)
+def etrade_positions(
+    context: AssetExecutionContext, etrader: ETrader, etrade_accounts: pd.DataFrame):
     """Pull positions in etrade for each account
 
     timestamp is generated
+
+    check is today_utc is the partition_date
     """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+    
+    today_loc = datetime.now(tz=PT_INFO).date()
+    print(today_loc)
+
+    if today_loc != partition_date:
+        raise ValueError(f"today {today_loc} is not {partition_date_str}")
+
     keys = etrade_accounts["account_id_key"].values
 
     all_positions = []
@@ -135,104 +186,62 @@ def etrade_positions(etrader: ETrader, etrade_accounts: pd.DataFrame):
     positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
     positions.loc[:, "date_acquired"] = positions["date_acquired"].apply(
         lambda d: datetime.fromtimestamp(d/1000).date())
+    positions.loc[:, "date"] = partition_date
 
     pos_cols = [
-        "symbol_description", "date_acquired", "price_paid", "quantity",
+        "symbol_description", "date", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
         "timestamp"]
     return positions[pos_cols]
 
-
-@multi_asset(
-        outs={
-            "positions": AssetOut(),
-            "positions_history": AssetOut(),
+@asset(
+        ins={
+            "etrade_positions": AssetIn(
+                partition_mapping=AllPartitionMapping())
         },
+
 )
-def positions_scd4(
-    etrade_positions: pd.DataFrame,
-    etrade_transactions: pd.DataFrame,
-):
-    """SCD Type 4 positions and market_values
+def open_positions_window(etrade_positions: pd.DataFrame):
+    """Open positions of the week before and week after
+    week starts on Sunday. make sure to include data from the prev week
+    In case some positions get sold Monday or Tuesday
 
-    positions has the latest
-    positions_history adds a new line for changes
-
-    timestamp is from input assets, keep in positions and positions_history
-    market_values changes every day - output to separate table
+    keep most recent
     """
-    from ..definitions import defs
-    cols_to_compare = [
-        "symbol_description", "date_acquired", "price_paid", "quantity",
-        "account_id_key", "position_id", "original_qty", "market_value"]
+    today_loc = datetime.now(tz=PT_INFO).date()
+    start_date = (today_loc) - timedelta(days=7)
+    print(start_date)
+    
+    positions = (
+        etrade_positions.loc[etrade_positions["date"]>=start_date]
+        .sort_values(by="date", ascending=False)
+        .drop_duplicates(subset=['position_lot_id', "quantity"], keep='first')
+    )
+    return positions
+
+@asset(
+        partitions_def=weekly_partdef,
+        metadata={"partition_expr": "DATETIME(date_closed)"},
+        output_required=False
+)
+def closed_positions(
+    sold_transactions: pd.DataFrame,
+    open_positions_window: pd.DataFrame,
+    
+):
+    """Weekly partition based on sold_transactions
+
+    might need etrade_positions from the previous week, though
+    eg. if something was sold Monday, but etrade_positions was not pulled
+    until after it was sold
+    """
+    
     closing_cols = [
         "timestamp", "date_closed", "transaction_fee", "transaction_id"]
-    
-    try:
-        old_positions = defs.load_asset_value(
-            AssetKey("positions")).set_index('position_lot_id')
-        old_positions_history = defs.load_asset_value(
-            AssetKey("positions_history")).set_index('position_lot_id')
-    except Exception as e: # NotFound:
-        old_positions = pd.DataFrame(
-            [], index=pd.Index([],name="position_lot_id", dtype='int64'),
-            columns=cols_to_compare+closing_cols)
-        old_positions_history = pd.DataFrame(
-            [], index=pd.Index([],name="position_lot_id", dtype='int64'))
-
-    etrade_positions = etrade_positions.set_index("position_lot_id").sort_index()
-    
-    # ignore ones that were previously closed
-    old_open_positions = old_positions.loc[old_positions["date_closed"].isnull()]
-    # compare the positions that are in both
-    # join on position_lot_id
-    positions_triage = etrade_positions.join(
-        old_open_positions[["symbol_description"]], how="outer", rsuffix="_prev"
-    )
-    # in etrade_positions but not in old_positions
-    new_open_positions = etrade_positions.loc[
-        positions_triage[
-            positions_triage["symbol_description_prev"].isnull()].index].copy()
-
-    # start positions df
-    positions = pd.concat([old_positions, new_open_positions])
-    if len(new_open_positions)>0:
-        new_open_positions.loc[:, "change_type"] = "opened_position"
-        new_open_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
-        
-    in_both = positions_triage.loc[
-        (~positions_triage[[
-            "symbol_description", "symbol_description_prev"]].isna()).all(axis=1)]
-
-    if len(old_positions) > 0:
-        diff_positions = old_positions.loc[in_both.index, cols_to_compare].compare(
-            etrade_positions.loc[in_both.index, cols_to_compare])
-        updated_positions = etrade_positions.loc[diff_positions.index].copy()
-        if len(updated_positions) > 0:
-            updated_positions.loc[:, "change_type"] = "updated"
-            updated_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
-            positions.loc[updated_positions.index, cols_to_compare+["timestamp"]] = \
-                updated_positions[cols_to_compare+["timestamp"]]
-    else:
-        updated_positions = pd.DataFrame([])    
-
-    # select the positions that aren't in etrade_positions
-    # and not already sold previously (date_closed is null)
-    # if they're also in Sold transactions
-    missing_old_positions = old_positions.loc[
-        positions_triage.loc[
-            positions_triage["symbol_description"].isnull()].index].copy()
-    maybe_closed = missing_old_positions.loc[
-        missing_old_positions["date_closed"].isnull()].reset_index().set_index(
-            ['symbol_description', 'quantity'])
-    # TODO: also need to add positions where quantity decreased
-    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
-    # cast quantity to float
-    sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
-
-    # use the market_value from the transactions
+    open_positions = open_positions_window.set_index(
+        ['symbol_description', 'quantity'])
     closed_transactions = (
-        sold
+        sold_transactions
         .rename(columns={
             "symbol": "symbol_description",
             "fee": "transaction_fee", "amount": "market_value",
@@ -242,52 +251,23 @@ def positions_scd4(
     closed_transactions.loc[:, "timestamp"] = closed_transactions[
         "date_closed"].apply(
             lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
+    new_closed_positions = (
+        pd.merge(
+            open_positions,
+            closed_transactions[closing_cols+["market_value"]],
+            left_index=True, right_index=True,
+            suffixes=("_pos", None))
+        .reset_index()
+    )
 
-    # transactions data takes precedence over data from the positions table
-    new_closed_positions = pd.merge(
-        maybe_closed, # should have position_lot_id column
-        closed_transactions[closing_cols+["market_value"]],
-        left_index=True, right_index=True,
-        suffixes=("_pos", None)).reset_index().set_index("position_lot_id")
-    print(new_closed_positions)
-    if len(new_closed_positions)>0:
-        new_closed_positions.loc[:, "change_type"] = "closed_position"
-        new_closed_positions.loc[:, "time_updated"] = datetime.now(timezone.utc)
-        positions.loc[new_closed_positions.index, closing_cols] = \
-            new_closed_positions[closing_cols]
-
-    yield Output(
-        positions[cols_to_compare+closing_cols].reset_index(), output_name="positions")
-    
-    history_cols = cols_to_compare+closing_cols+["change_type", "time_updated"]
-    positions_history = pd.concat([
-        old_positions_history, new_open_positions, updated_positions,
-        new_closed_positions]).reindex(
-            columns=history_cols
-        ).reset_index()
-    yield Output(
-        positions_history, output_name="positions_history")
-
-@asset
-def open_positions(positions: pd.DataFrame):
-    """Filter positions
-    """
-    open_ps = positions.loc[positions["date_closed"].isnull()]
-    
-    return open_ps
-
-@asset
-def closed_positions(positions: pd.DataFrame):
-    """Filter positions
-    """
-    closed_ps = positions.loc[~positions["date_closed"].isnull()]
-    return closed_ps
+    if len(new_closed_positions) > 0:
+        return new_closed_positions
 
 @asset(
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
-def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
+def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
     """Market values and gains
     
     save this asset daily? ok
@@ -299,30 +279,29 @@ def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
 
-    open_positions.loc[:, "market_price"] = open_positions.apply(
+    etrade_positions.loc[:, "market_price"] = etrade_positions.apply(
         lambda r: r["market_value"]/r["quantity"], axis=1
     )
     # need to get historical market prices from yahoo finance
-    open_positions.loc[:, "percent_price_gain"] = open_positions.apply(
+    etrade_positions.loc[:, "percent_price_gain"] = etrade_positions.apply(
         lambda r: pg.compute_percent_price_gain(
             r["price_paid"], r["market_price"]), axis=1)
-    open_positions.loc[:, "gain"] = open_positions.apply(
+    etrade_positions.loc[:, "gain"] = etrade_positions.apply(
         lambda r: pg.compute_gain(r["percent_price_gain"], r["quantity"], r["price_paid"]),
         axis=1
     )
-    open_positions.loc[:, "percent_gain"] = open_positions.apply(
+    etrade_positions.loc[:, "percent_gain"] = etrade_positions.apply(
         lambda r: pg.compute_percent_gain(r["gain"], r["quantity"], r["price_paid"]),
         axis=1
     )
-    open_positions[["annualized_pct_gain", "days_held"]] = open_positions.apply(
+    etrade_positions[["annualized_pct_gain", "days_held"]] = etrade_positions.apply(
         lambda r: pg.compute_annualized_percent_gain(
             r["percent_gain"], r["date_acquired"], partition_date
         ),
         axis=1, result_type="expand"
     )
 
-    open_positions.loc[:, "date"] = partition_date
-    return open_positions[[
+    return etrade_positions[[
         "date", "position_id", "position_lot_id", "symbol_description", "market_price", "percent_price_gain",
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
 
@@ -331,10 +310,10 @@ def gains(context: AssetExecutionContext, open_positions: pd.DataFrame):
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
-def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
+def benchmark_values(context: AssetExecutionContext, etrade_positions:pd.DataFrame):
     """Pull benchmark gains
     """
-    earliest_date = open_positions["date_acquired"].min()
+    earliest_date = etrade_positions["date_acquired"].min()
     bm = yf.Ticker(DEFAULT_BENCHMARK_TICKER)
     bm_hist = bm.history(start=earliest_date)
     return bm_hist.reset_index()
@@ -360,7 +339,12 @@ def get_current_price_yf(ticker:str):
 
 @asset(
         partitions_def=daily_partdef,
-        metadata={"partition_expr": "DATETIME(date)"}
+        metadata={"partition_expr": "DATETIME(date)"},
+        ins={
+            "sold_transactions": AssetIn(
+                partition_mapping=AllPartitionMapping()
+            )
+        }
 )
 def buy_recommendations_previously_sold(
     context: AssetExecutionContext, config: BuyRecPrevSoldConfig,

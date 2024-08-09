@@ -9,9 +9,14 @@ from unittest.mock import patch, MagicMock
 
 from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.assets.positions import (
-    etrade_accounts, etrade_positions,
-    positions_scd4, open_positions,
-    gains)
+    PT_INFO,
+    etrade_accounts, etrade_positions, etrade_transactions,
+    sold_transactions, closed_positions,
+    gains, buy_recommendations_previously_sold, sell_recommendations)
+
+TODAY_LOC = datetime.now(tz=PT_INFO).date()
+TODAY_LOC_STR = TODAY_LOC.isoformat()
+print(TODAY_LOC_STR)
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.list_accounts')
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.renew_access_token')
@@ -27,13 +32,15 @@ def test_etrade_accounts(
             'accountId': '2',
             'accountIdKey': 'Xab'}]
     mock_list_accounts.return_value = test_accounts
+    context = build_asset_context(partition_key=TODAY_LOC_STR)
 
     result = etrade_accounts(
+        context,
         etrader=ETrader(session_token="xx", session_token_secret="sts")
     )
     print(result)
     assert len(result) == 2
-    assert set(result.columns) == {'account_id', "account_id_key"
+    assert set(result.columns) == {'account_id', "account_id_key", "date"
     }
 
 @patch('gain_tracker.resources.etrade_api.ETradeAPI.view_portfolio')
@@ -53,8 +60,12 @@ def test_etrade_positions(
     })
     mock_view_portfolio.return_value = test_portfolio
 
-    etrade_accounts = pd.DataFrame({"account_id_key": ["acc_1"]})
+    etrade_accounts = pd.DataFrame({
+        "account_id_key": ["acc_1"], "date": TODAY_LOC})
+    context = build_asset_context(partition_key=TODAY_LOC_STR)
+
     result = etrade_positions(
+        context,
         etrader=ETrader(session_token="xx", session_token_secret="sts"),
         etrade_accounts=etrade_accounts
     )
@@ -95,123 +106,48 @@ def sample_etrade_transactions():
     }
     yield pd.DataFrame(data)
 
-def test_positions_scd4_no_old_pos(
-        sample_etrade_positions, sample_etrade_transactions):
-    
-    # no old_positions or old_positions_history
-    # MSFT was sold
-    pos, pos_history = positions_scd4(
-        sample_etrade_positions, sample_etrade_transactions)
-    print(pos.value)
-    assert len(pos.value) == 3
-    # doesn't know any are sold bc there are no old_open_positions
-    print(pos_history.value)
-    assert len(pos_history.value) == 3
-    assert pos_history.value.loc[1, "change_type"] == "opened_position"
-
-def test_positions_scd4_no_old_pos_bought(
-        sample_etrade_positions, sample_etrade_transactions):
-
-    # no old_positions or old_positions_history
-    # MSFT was also bought
-    sample_etrade_transactions.loc[1, "transaction_type"] = "Bought"
-    pos, pos_history = positions_scd4(
-        sample_etrade_positions, sample_etrade_transactions)
-    assert len(pos.value) == 3
-    # doesn't know any are sold bc there are no old_open_positions
-    assert len(pos_history.value) == 3
-    assert "transaction_fee" in pos_history.value.columns
-
 @pytest.fixture
-def sample_positions_history():
+def sample_sold_transactions():
     data = {
-        "symbol_description": ["AAPL", "GOOGL", "MSFT"],
-        "date_acquired": ["2021-01-01", "2020-05-15", "2019-11-20"],
-        "price_paid": [150.0, 2000.0, 120.0],
-        "quantity": [100.0, 50.0, 300.0],
-        "market_value": [17000.0, 100100.0, 34000.0], # changed from pos
-        "original_qty": [100, 50, 300],
-        "account_id_key": [101, 102, 103],
-        "position_id": [1001, 1002, 1003],
-        "position_lot_id": [1, 2, 3],
-        "transaction_id": [None, None, None],
-        "transaction_fee": [None, None, None],
-        "change_type": ["opened_position", "opened_position", "opened_position"],
-        "date_closed": [None, None, None],
-        "timestamp": [
-            datetime.fromisoformat("2021-08-01 10:00:00"), 
-            datetime.fromisoformat("2021-08-01 11:00:00"), 
-            datetime.fromisoformat("2021-08-01 12:00:00")],
-        "time_updated": [
-            datetime.fromisoformat("2021-08-01 10:00:00"), 
-            datetime.fromisoformat("2021-08-01 11:00:00"), 
-            datetime.fromisoformat("2021-08-01 12:00:00")]
+        "symbol": ["MSFT"],
+        "quantity": [300],
+        "transaction_type": ["Sold"], 
+        "transaction_date": [
+            date.fromisoformat("2024-03-26")],
+        "fee": [0.01], 
+        "transaction_id": [25],
+        "amount": [30000.0]
     }
     yield pd.DataFrame(data)
 
-@patch('gain_tracker.definitions.defs.load_asset_value')
-def test_positions_scd4(
-        mock_load_asset_value,
-        sample_etrade_positions, sample_etrade_transactions,
-        sample_positions_history):
+def test_closed_positions(
+        sample_etrade_positions, sample_sold_transactions):
 
-    old_pos = sample_positions_history.drop("change_type", axis=1)
-
-    pos_history_add_sold = sample_positions_history.copy(deep=True)
-    pos_history_add_sold.loc[3] = pd.Series({
-        "symbol_description": "GOOGL",
-        "date_acquired": "2023-10-05",
-        "price_paid": 200,
-        "quantity": 4,
-        "market_value": 800,
-        "original_qty": 4,
-        "account_id_key": 102,
-        "position_id": 999,
-        "position_lot_id": 0,
-        "transaction_id": 500,
-        "transaction_fee": 0.2,
-        "change_type": "closed_position",
-        "date_closed": date.fromisoformat("2023-08-01"),
-        "timestamp": datetime.fromisoformat("2023-08-01 10:00:00"),
-        "time_updated": datetime.fromisoformat("2023-08-01 10:00:00")
-    })
-
-    # patch in old_pos and old_pos_history
-    mock_load_asset_value.side_effect=[
-        old_pos.copy(deep=True), sample_positions_history.copy(deep=True),
-        old_pos.copy(deep=True), pos_history_add_sold]
-
-    pos, pos_history = positions_scd4(
+    result = closed_positions(
+        sample_sold_transactions.copy(deep=True),
         sample_etrade_positions.copy(deep=True), 
-        sample_etrade_transactions.copy(deep=True))
-    print(pos.value)
-    assert len(pos.value) == 3
-    # doesn't know any are sold bc there are no old_open_positions
-    print(pos_history.value)
-    assert len(pos_history.value) == 6
+    )
+    print(result)
+    assert len(result) == 1
+    assert result.loc[0, "market_value"] == 30000
+    assert result.loc[0, "transaction_fee"] == 0.01
+    assert result.loc[0, "timestamp"] == datetime(2024, 3, 26, tzinfo=timezone.utc)
 
-    # msft position is missing from new positions asset
-    # but it's in the old_positions, passed by mock_load_asset_value
-    pos_sold_msft = sample_etrade_positions.drop(2)
-    pos, pos_history = positions_scd4(
-        pos_sold_msft,
-        sample_etrade_transactions.copy(deep=True))
-    pos_history_sold = pos_history.value
-    print(pos.value)
-    assert len(pos.value) == 3
-    # doesn't know any are sold bc there are no old_open_positions
-    print(pos_history_sold)
-    assert len(pos_history_sold) == 7
-    assert len(pos_history_sold[
-        pos_history_sold["change_type"]=="closed_position"]) == 2
-    assert pos_history_sold.loc[6, "market_value"] == 30000
-    assert pos_history_sold.loc[6, "transaction_fee"] == 0.01
-    assert pos_history_sold.loc[6, "timestamp"] == datetime(2024, 3, 26, tzinfo=timezone.utc)
+    no_msft_pos = sample_etrade_positions.drop(2)
+    result = closed_positions(
+        sample_sold_transactions.copy(deep=True),
+        no_msft_pos,
+    )
+    print(result)
+    assert result is None
 
 def test_gains():
 
     d = datetime(2024, 1, 1, tzinfo=timezone.utc).date()
-    open_positions = pd.DataFrame(
+    part_date = datetime(2024, 2, 1, tzinfo=timezone.utc).date()
+    part_date_str = part_date.isoformat()
+
+    positions = pd.DataFrame(
         {
             "position_id": [0, 1, 2, 3],
             "position_lot_id": [10, 11, 12, 13],
@@ -219,12 +155,13 @@ def test_gains():
             "price_paid": [0.1, 1, 10, 3],
             "quantity": [1, 1, 2, 1],
             "market_value": [0.14, 1.1, 20, 3.3],
-            "date_acquired": [d, d, d, d]
+            "date_acquired": 4*[d],
+            "date": 4*[part_date]
         }
     )
-    context = build_asset_context(partition_key="2024-02-01")
+    context = build_asset_context(partition_key=part_date_str)
 
-    result = gains(context, open_positions)
+    result = gains(context, positions)
     print(result)
     assert len(result) == 4
     assert "annualized_pct_gain" in result.columns
