@@ -188,20 +188,38 @@ def etrade_positions(
     return positions[pos_cols]
 
 @asset(
-        partitions_def=weekly_partdef,
         ins={
             "etrade_positions": AssetIn(
-                partition_mapping=TimeWindowPartitionMapping(
-                    start_offset=-1, end_offset=7,
-                    allow_nonexistent_upstream_partitions=True)
-            ),
+                partition_mapping=AllPartitionMapping())
         },
+
+)
+def open_positions_window(etrade_positions: pd.DataFrame):
+    """Open positions of the week before and week after
+    week starts on Sunday. make sure to include data from the prev week
+    In case some positions get sold Monday or Tuesday
+
+    keep most recent
+    """
+    today_loc = datetime.now(tz=PT_INFO).date()
+    start_date = (today_loc) - timedelta(days=7)
+    print(start_date)
+    
+    positions = (
+        etrade_positions.loc[etrade_positions["date"]>=start_date]
+        .sort_values(by="date", ascending=False)
+        .drop_duplicates(subset=['position_lot_id', "quantity"], keep='first')
+    )
+    return positions
+
+@asset(
+        partitions_def=weekly_partdef,
         metadata={"partition_expr": "DATETIME(date_closed)"},
         output_required=False
 )
 def closed_positions(
     sold_transactions: pd.DataFrame,
-    etrade_positions: pd.DataFrame,
+    open_positions_window: pd.DataFrame,
     
 ):
     """Weekly partition based on sold_transactions
@@ -213,7 +231,7 @@ def closed_positions(
     
     closing_cols = [
         "timestamp", "date_closed", "transaction_fee", "transaction_id"]
-    etrade_positions = etrade_positions.drop_duplicates().set_index(
+    open_positions = open_positions_window.set_index(
         ['symbol_description', 'quantity'])
     closed_transactions = (
         sold_transactions
@@ -228,7 +246,7 @@ def closed_positions(
             lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
     new_closed_positions = (
         pd.merge(
-            etrade_positions,
+            open_positions,
             closed_transactions[closing_cols+["market_value"]],
             left_index=True, right_index=True,
             suffixes=("_pos", None))
@@ -285,10 +303,10 @@ def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"}
 )
-def benchmark_values(context: AssetExecutionContext, open_positions:pd.DataFrame):
+def benchmark_values(context: AssetExecutionContext, etrade_positions:pd.DataFrame):
     """Pull benchmark gains
     """
-    earliest_date = open_positions["date_acquired"].min()
+    earliest_date = etrade_positions["date_acquired"].min()
     bm = yf.Ticker(DEFAULT_BENCHMARK_TICKER)
     bm_hist = bm.history(start=earliest_date)
     return bm_hist.reset_index()

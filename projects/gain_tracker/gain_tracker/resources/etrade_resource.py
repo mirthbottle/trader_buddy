@@ -6,7 +6,7 @@ from dagster import ConfigurableResource, InitResourceContext
 from .etrade_api import ETradeAPI
 
 env = os.getenv("ENV", "dev")
-
+env = "prod"
         
 class ETrader(ConfigurableResource):
     session_token: str

@@ -15,7 +15,7 @@ from gain_tracker.resources.gsheets_resource import GSheetsResource
 
 from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions, etrade_transactions,
-    sold_transactions, closed_positions,
+    sold_transactions, open_positions_window, closed_positions,
     gains, sell_recommendations,
     buy_recommendations_previously_sold, all_recommendations,
     benchmark_values)
@@ -41,7 +41,7 @@ defs = Definitions(
         # positions_count, 
         etrade_accounts, etrade_positions, etrade_transactions,
         sold_transactions,
-        closed_positions,
+        open_positions_window, closed_positions,
         gains, sell_recommendations, buy_recommendations_previously_sold,
         all_recommendations,
         benchmark_values,

@@ -12,7 +12,7 @@ from ..assets.positions import *
 pull_etrade_dailies = define_asset_job(
     "pull_etrade_dailies",
     selection=[
-        etrade_accounts, etrade_positions,
+        etrade_accounts, etrade_positions
     ]
 )
 
@@ -21,6 +21,7 @@ pull_etrade_weeklies = define_asset_job(
     selection=[
         etrade_transactions,
         sold_transactions,
+        open_positions_window,
         closed_positions
     ],
     partitions_def=weekly_partdef
