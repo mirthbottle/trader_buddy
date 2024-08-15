@@ -120,6 +120,7 @@ def etrade_transactions(
         transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
         transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
             lambda d: datetime.fromtimestamp(d/1000).date())
+        transactions.drop_duplicates(subset=["transaction_id"], inplace=True)
 
         return transactions
 
@@ -134,13 +135,14 @@ def sold_transactions(
 ):
     """sold etrade_transactions
     """
-    sold = etrade_transactions.loc[etrade_transactions["transaction_type"]=="Sold"]
+    sold = etrade_transactions.loc[
+        etrade_transactions["transaction_type"]=="Sold"].copy(deep=True)
     # cast quantity to float
     sold.loc[:, "quantity"] = sold["quantity"].apply(lambda s: -1.0*s)
     
     output_cols = [
         "transaction_id", "symbol", "transaction_date", "price", "amount", "quantity",
-        "fee", "account_id", "timestamp", "transaction_id"]
+        "fee", "account_id", "timestamp"]
     
     if len(sold) > 0:
         return sold[output_cols]
@@ -240,6 +242,9 @@ def closed_positions(
         "timestamp", "date_closed", "transaction_fee", "transaction_id"]
     open_positions = open_positions_window.set_index(
         ['symbol_description', 'quantity'])
+    max_ts = open_positions["timestamp"].max()
+    missing = open_positions.loc[open_positions["timestamp"] < max_ts].copy()
+    
     closed_transactions = (
         sold_transactions
         .rename(columns={
@@ -253,7 +258,7 @@ def closed_positions(
             lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
     new_closed_positions = (
         pd.merge(
-            open_positions,
+            missing,
             closed_transactions[closing_cols+["market_value"]],
             left_index=True, right_index=True,
             suffixes=("_pos", None))
@@ -261,7 +266,11 @@ def closed_positions(
     )
 
     if len(new_closed_positions) > 0:
-        return new_closed_positions
+        cols = [
+        "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
+        "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
+        "timestamp", "transaction_id", "transaction_fee"]
+        return new_closed_positions[cols]
 
 @asset(
         partitions_def=daily_partdef,
