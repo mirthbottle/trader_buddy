@@ -85,9 +85,9 @@ def sample_etrade_positions():
         "position_id": [1001, 1002, 1003],
         "position_lot_id": [1, 2, 3],
         "timestamp": [
-            datetime.fromisoformat("2021-09-01 10:00:00"), 
             datetime.fromisoformat("2021-09-01 11:00:00"), 
-            datetime.fromisoformat("2021-09-01 12:00:00")]
+            datetime.fromisoformat("2021-09-01 11:00:00"), 
+            datetime.fromisoformat("2021-09-01 02:00:00")]
     }
     yield pd.DataFrame(data)
 

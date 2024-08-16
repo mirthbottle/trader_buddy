@@ -7,7 +7,7 @@ from .etrade_api import ETradeAPI
 
 
 env = os.getenv("ENV", "dev")
-env = "prod" # always pull real etrade data
+# env = "prod" # always pull real etrade data
         
 class ETrader(ConfigurableResource):
     session_token: str
