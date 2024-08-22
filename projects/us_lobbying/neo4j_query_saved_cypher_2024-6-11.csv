@@ -1,0 +1,16 @@
+name,description,query,id,parentId,isFolder
+basic search,,,0,,true
+query by industry catcode,,"MATCH (i:industry {catcode: ""X3000""}) RETURN i;",1,0,false
+lobbying amounts,,,2,,true
+search by company by name starts with,,"MATCH (c: company)
+WHERE c.name STARTS WITH ""Boeing""
+RETURN c;",3,0,false
+search by industry starts with D,,"MATCH (i: industry)
+WHERE i.catcode STARTS WITH ""D""
+RETURN i;",4,0,false
+search for companies by lobbying total and industry catcode,,"MATCH (c: company) -[:PART_OF]->(i:industry)
+WHERE (c.lobbying_total >= 10000) AND (i.catcode STARTS WITH ""D"")
+RETURN c;",5,2,false
+avg lobbying amounts,,"MATCH (c:company)
+WHERE c.lobbying_total IS NOT NULL
+RETURN avg(c.lobbying_total) AS avg_lobbying, count(c)",6,2,false
