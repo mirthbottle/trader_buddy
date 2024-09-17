@@ -82,7 +82,11 @@ class Position:
 			percent_price_gain, gain, percent_gain,
 			annualized_pct_gain, days_held)
 		return gm
-			
+
+@dataclass
+class OpenPosition(Position):
+	status: PositionStatus = PositionStatus.OPEN_LONG
+
 @dataclass
 class ClosedPosition(Position):
 	transaction_id: int = -1

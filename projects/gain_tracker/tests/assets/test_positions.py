@@ -155,8 +155,10 @@ def test_gains():
         {
             "position_id": [0, 1, 2, 3],
             "position_lot_id": [10, 11, 12, 13],
+            "account_id_key": 4*["IRA"],
             "symbol_description": ["A", "B", "C", "D"],
             "price_paid": [0.1, 1, 10, 3],
+            "original_qty": [1, 1, 2, 1],
             "quantity": [1, 1, 2, 1],
             "market_value": [0.14, 1.1, 20, 3.3],
             "date_acquired": 4*[d],

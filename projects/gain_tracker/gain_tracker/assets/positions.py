@@ -28,7 +28,7 @@ from ..resources.etrade_resource import ETrader
 from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
-from ..position import ClosedPosition
+from ..position import ClosedPosition, OpenPosition
 
 DEFAULT_BENCHMARK_TICKER="IVV"
 PT_INFO = ZoneInfo("America/Los_Angeles")
@@ -315,29 +315,28 @@ def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
 
+    positions = etrade_positions.apply(
+        lambda r: OpenPosition(
+            r["position_lot_id"],
+            r["account_id_key"],
+            r["symbol_description"],
+            r["price_paid"],
+            r["date_acquired"],
+            r["quantity"],
+            r["original_qty"],
+            r["market_value"]), axis=1)
+    
+    gmetrics = positions.apply(lambda p: p.compute_gains(partition_date))
+
+    gm_df = pd.DataFrame(gmetrics.values.tolist())
     etrade_positions.loc[:, "market_price"] = etrade_positions.apply(
         lambda r: r["market_value"]/r["quantity"], axis=1
     )
-    # need to get historical market prices from yahoo finance
-    etrade_positions.loc[:, "percent_price_gain"] = etrade_positions.apply(
-        lambda r: pg.compute_percent_price_gain(
-            r["price_paid"], r["market_price"]), axis=1)
-    etrade_positions.loc[:, "gain"] = etrade_positions.apply(
-        lambda r: pg.compute_gain(r["percent_price_gain"], r["quantity"], r["price_paid"]),
-        axis=1
-    )
-    etrade_positions.loc[:, "percent_gain"] = etrade_positions.apply(
-        lambda r: pg.compute_percent_gain(r["gain"], r["quantity"], r["price_paid"]),
-        axis=1
-    )
-    etrade_positions[["annualized_pct_gain", "days_held"]] = etrade_positions.apply(
-        lambda r: pg.compute_annualized_percent_gain(
-            r["percent_gain"], r["date_acquired"], partition_date
-        ),
-        axis=1, result_type="expand"
-    )
 
-    return etrade_positions[[
+    gains_df = pd.concat([
+        etrade_positions.reset_index(drop=True),gm_df],axis=1)
+    
+    return gains_df[[
         "date", "position_id", "position_lot_id", "symbol_description", "market_price", "percent_price_gain",
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
 
