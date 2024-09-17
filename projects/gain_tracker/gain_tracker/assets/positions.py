@@ -1,5 +1,5 @@
 """
-
+gain_tracker.assets.positions
 """
 import logging
 from typing import Optional
@@ -65,7 +65,7 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     partition_date = date.fromisoformat(partition_date_str)
     
     today_loc = datetime.now(tz=PT_INFO).date()
-    print(today_loc)
+    logger.info(today_loc)
 
     if today_loc != partition_date:
         raise ValueError(f"today {today_loc} is not {partition_date_str}")
@@ -102,7 +102,8 @@ def etrade_transactions(
 
     end_date_str = (partition_date + timedelta(days=7)).strftime("%m%d%Y")
     start_date_str = partition_date.strftime("%m%d%Y")
-    keys = etrade_accounts["account_id_key"].values
+    keys = etrade_accounts["account_id_key"].unique()
+    logger.info(f'dates: {start_date_str} to {end_date_str}')
 
     all_transactions = []
     for k in keys:
@@ -165,7 +166,7 @@ def etrade_positions(
     partition_date = date.fromisoformat(partition_date_str)
     
     today_loc = datetime.now(tz=PT_INFO).date()
-    print(today_loc)
+    logger.info(today_loc)
 
     if today_loc != partition_date:
         raise ValueError(f"today {today_loc} is not {partition_date_str}")

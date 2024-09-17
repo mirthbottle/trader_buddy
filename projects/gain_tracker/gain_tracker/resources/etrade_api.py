@@ -12,6 +12,7 @@ from rauth import OAuth1Service, OAuth1Session
 # Set up logging
 logger = logging.getLogger(__name__)
 
+
 class ETradeAPI:
     """:description: Performs authorization for OAuth 1.0a
 
@@ -255,7 +256,7 @@ etrader:
             start_date, end_date = date_range
             params["startDate"] = start_date
             params["endDate"] = end_date
-        print(params)
+        logger.info(params)
         response = self.session.get(transactions_url, params=params)
         
         if response is None or response.status_code != 200:
@@ -265,7 +266,7 @@ etrader:
         transactions = response.json()["TransactionListResponse"]["Transaction"]
         
         if len(transactions) == 50:
-            print("Warning: There are probably additional transactions")
+            logger.warning("Warning: There are probably additional transactions")
         
         if len(transactions) > 0:
             ts = pd.DataFrame(transactions)
