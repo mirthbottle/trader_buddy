@@ -76,7 +76,10 @@ def test_etrade_positions(
 def sample_etrade_positions():
     data = {
         "symbol_description": ["AAPL", "GOOGL", "MSFT"],
-        "date_acquired": ["2021-01-01", "2020-05-15", "2019-11-20"],
+        "date_acquired": [
+            date.fromisoformat("2021-01-01"), 
+            date.fromisoformat("2020-05-15"), 
+            date.fromisoformat("2019-11-20")],
         "price_paid": [150.0, 2000.0, 120.0],
         "quantity": [100.0, 50.0, 300.0],
         "market_value": [16000.0, 100000.0, 36000.0],
@@ -132,6 +135,7 @@ def test_closed_positions(
     assert result.loc[0, "market_value"] == 30000
     assert result.loc[0, "transaction_fee"] == 0.01
     assert result.loc[0, "timestamp"] == datetime(2024, 3, 26, tzinfo=timezone.utc)
+    assert "days_held" in result.columns
 
     no_msft_pos = sample_etrade_positions.drop(2)
     result = closed_positions(

@@ -6,6 +6,8 @@ from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from decimal import Decimal, getcontext
+getcontext().prec = 12
 import pandas as pd
 import pygsheets
 
@@ -266,11 +268,39 @@ def closed_positions(
         .reset_index()
     )
 
+
     if len(new_closed_positions) > 0:
+        
+        new_closed_positions.loc[:, "market_price"] = new_closed_positions.apply(
+            lambda r: r["market_value"]/r["quantity"], axis=1
+        )
+        # need to get historical market prices from yahoo finance
+        new_closed_positions.loc[:, "percent_price_gain"] = new_closed_positions.apply(
+            lambda r: pg.compute_percent_price_gain(
+                r["price_paid"], r["market_price"]), axis=1)
+        new_closed_positions.loc[:, "gain"] = new_closed_positions.apply(
+            lambda r: pg.compute_gain(
+                r["percent_price_gain"], r["quantity"], r["price_paid"],
+                Decimal(str(-1*r["transaction_fee"]))),
+            axis=1
+        )
+        new_closed_positions.loc[:, "percent_gain"] = new_closed_positions.apply(
+            lambda r: pg.compute_percent_gain(r["gain"], r["quantity"], r["price_paid"]),
+            axis=1
+        )
+        new_closed_positions[["annualized_pct_gain", "days_held"]] = new_closed_positions.apply(
+            lambda r: pg.compute_annualized_percent_gain(
+                r["percent_gain"], r["date_acquired"], r["date_closed"]
+            ),
+                axis=1, result_type="expand"
+            )
+
         cols = [
         "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
-        "timestamp", "transaction_id", "transaction_fee"]
+        "timestamp", "transaction_id", "transaction_fee",
+        "market_price", "percent_price_gain", "gain", "percent_gain",
+        "annualized_pct_gain", "days_held"]
         return new_closed_positions[cols]
 
 @asset(

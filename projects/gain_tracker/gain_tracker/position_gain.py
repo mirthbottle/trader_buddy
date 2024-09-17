@@ -44,6 +44,7 @@ def compute_gain(
     percent_gain * n_shares * start_price
 
     transactions are optional: sum them up outside of this method
+    costs are negative
     """
     gain = percent_price_gain*Decimal(str(n_shares))*Decimal(str(start_price))
     
