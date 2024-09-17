@@ -28,6 +28,7 @@ from ..resources.etrade_resource import ETrader
 from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
+from ..position import ClosedPosition
 
 DEFAULT_BENCHMARK_TICKER="IVV"
 PT_INFO = ZoneInfo("America/Los_Angeles")
@@ -268,40 +269,35 @@ def closed_positions(
         .reset_index()
     )
 
-
     if len(new_closed_positions) > 0:
+        positions = new_closed_positions.apply(
+            lambda r: ClosedPosition(
+                r["position_lot_id"],
+                r["account_id_key"],
+                r["symbol_description"],
+                r["price_paid"],
+                r["date_acquired"],
+                r["quantity"],
+                r["original_qty"],
+                r["market_value"],
+                transaction_id = r["transaction_id"],
+                transaction_fee = r["transaction_fee"],
+                date_closed=r["date_closed"]), axis=1)
         
-        new_closed_positions.loc[:, "market_price"] = new_closed_positions.apply(
-            lambda r: r["market_value"]/r["quantity"], axis=1
-        )
-        # need to get historical market prices from yahoo finance
-        new_closed_positions.loc[:, "percent_price_gain"] = new_closed_positions.apply(
-            lambda r: pg.compute_percent_price_gain(
-                r["price_paid"], r["market_price"]), axis=1)
-        new_closed_positions.loc[:, "gain"] = new_closed_positions.apply(
-            lambda r: pg.compute_gain(
-                r["percent_price_gain"], r["quantity"], r["price_paid"],
-                Decimal(str(-1*r["transaction_fee"]))),
-            axis=1
-        )
-        new_closed_positions.loc[:, "percent_gain"] = new_closed_positions.apply(
-            lambda r: pg.compute_percent_gain(r["gain"], r["quantity"], r["price_paid"]),
-            axis=1
-        )
-        new_closed_positions[["annualized_pct_gain", "days_held"]] = new_closed_positions.apply(
-            lambda r: pg.compute_annualized_percent_gain(
-                r["percent_gain"], r["date_acquired"], r["date_closed"]
-            ),
-                axis=1, result_type="expand"
-            )
+        gmetrics = positions.apply(lambda p: p.compute_gains())
 
+        gm_df = pd.DataFrame(gmetrics.values.tolist())
+
+        closed_gains_df = pd.concat([
+            new_closed_positions.reset_index(drop=True),gm_df],axis=1)
+        
         cols = [
         "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
         "timestamp", "transaction_id", "transaction_fee",
-        "market_price", "percent_price_gain", "gain", "percent_gain",
+        "percent_price_gain", "gain", "percent_gain",
         "annualized_pct_gain", "days_held"]
-        return new_closed_positions[cols]
+        return closed_gains_df[cols]
 
 @asset(
         partitions_def=daily_partdef,

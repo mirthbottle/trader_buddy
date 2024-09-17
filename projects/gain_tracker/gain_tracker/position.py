@@ -12,14 +12,14 @@ from decimal import Decimal
 from . import position_gain as pg
 
 class PositionStatus(Enum):
-    """enum class for the Position
+	"""enum class for the Position
 
-    CLOSED may be very similar to WATCHING, but there is a closed price
-    """
-    WATCHING = 0
-    OPEN_LONG = 1
-    OPEN_SHORT = 2
-    CLOSED = -1
+	CLOSED may be very similar to WATCHING, but there is a closed price
+	"""
+	WATCHING = 0
+	OPEN_LONG = 1
+	OPEN_SHORT = 2
+	CLOSED = -1
 
 class SymbolType(Enum):
     """"""
@@ -29,20 +29,73 @@ class SymbolType(Enum):
     ISIN=1
 
 @dataclass
-class Position:
-    """Position properties
-    """
-    position_id: str
-    instrument_symbol: str
-    price_paid: Optional[float] = 0
-    date_acquired: Optional[date] = None
-    original_quantity: Optional[float] = 0
-    exit_price: Optional[float] = None
-    exit_date: Optional[date] = None
-    instrument_symbol_type: SymbolType = SymbolType.TICKER
-    exchange: str = "PCX"
-    status: PositionStatus = PositionStatus.WATCHING
+class GainMetrics:
+	percent_price_gain: Decimal
+	gain: Decimal
+	percent_gain: Decimal
+	annualized_pct_gain: Decimal
+	days_held: int
 
+@dataclass
+class Position:
+	"""Position properties
+	"""
+	position_lot_id: int
+	account_id_key: str
+	instrument_symbol: str
+	price_paid: Optional[float] = 0
+	date_acquired: Optional[date] = None
+	quantity: Optional[float] = 0
+	original_quantity: Optional[float] = 0
+	market_value: Optional[float] = None
+	transaction_fee: float = 0
+	instrument_symbol_type: SymbolType = SymbolType.TICKER
+	exchange: str = "PCX"
+	status: PositionStatus = PositionStatus.WATCHING
+	
+	def market_price(self) -> float:
+		if self.market_value:
+			return self.market_value/self.quantity
+		else:
+			return None
+		
+	def compute_gains(self, pricing_date: date) -> GainMetrics:
+		"""compute all the gains needed
+		"""
+		market_price = self.market_value/self.quantity
+		# need to get historical market prices from yahoo finance
+		percent_price_gain = pg.compute_percent_price_gain(
+			self.price_paid, market_price)
+
+		gain = pg.compute_gain(
+			percent_price_gain, self.quantity, self.price_paid,
+				Decimal(str(-1*self.transaction_fee)))
+		
+		percent_gain = pg.compute_percent_gain(
+			gain, self.quantity, self.price_paid)
+		
+		annualized_pct_gain, days_held = pg.compute_annualized_percent_gain(
+				percent_gain, self.date_acquired, pricing_date
+			)
+
+		gm = GainMetrics(
+			percent_price_gain, gain, percent_gain,
+			annualized_pct_gain, days_held)
+		return gm
+			
+@dataclass
+class ClosedPosition(Position):
+	transaction_id: int = -1
+	transaction_fee: float = 0
+	date_closed: date = date.today()
+	status: PositionStatus = PositionStatus.CLOSED
+
+	def compute_gains(self):
+		"""Compute gain with closing date per row
+		"""
+		gm = super().compute_gains(self.date_closed)
+		return gm
+	
 def recommend_enter_long(
             position: Position, current_price, timeframe_months: int=1):
 	"""Evaluate a long position
@@ -68,10 +121,7 @@ def enter_long(position: Position, current_price, target_value: float):
 
 	# trading_platform.buy(shares)
 
-def compute_gains(current_price):
-	"""compute all the gains needed
-	"""
-	pass
+
 
 def recommend_exit_long(
 		position: Position, current_price: Decimal, market_rate: Optional[Decimal]=Decimal("0.08")):

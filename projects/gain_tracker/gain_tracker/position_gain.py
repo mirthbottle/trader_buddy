@@ -79,7 +79,7 @@ def compute_annualized_percent_gain(
     root_yr = Decimal("1")/pct_yr
 
     annualized = (percent_gain+Decimal("1"))**root_yr+Decimal("-1")
-    return annualized, days
+    return annualized, int(days)
 
 
 def compute_annualized_gain(gain: Decimal, days: int):
