@@ -2,12 +2,16 @@
 
 A trade with recommendations about when to exit
 implement with etrade and BigQuery?
+
+in the future, use Pydantic for dataframe rows
+and then dataclass for having dataframe vars
 """
 from enum import Enum
 from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime, date
-from decimal import Decimal
+from decimal import Decimal, getcontext
+getcontext().prec = 28
 
 from . import position_gain as pg
 

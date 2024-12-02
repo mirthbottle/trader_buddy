@@ -6,10 +6,10 @@ from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
-from decimal import Decimal, getcontext
-getcontext().prec = 12
+
 import pandas as pd
 import pygsheets
+import pyarrow as pa
 
 from google.api_core.exceptions import NotFound
 from dagster import (
@@ -267,7 +267,7 @@ def closed_positions(
             left_index=True, right_index=True,
             suffixes=("_pos", None))
         .reset_index()
-    )
+    ).drop_duplicates(subset=closing_cols+["market_value"])
 
     if len(new_closed_positions) > 0:
         positions = new_closed_positions.apply(
@@ -336,6 +336,11 @@ def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
     gains_df = pd.concat([
         etrade_positions.reset_index(drop=True),gm_df],axis=1)
     
+    # print(gains_df.values)
+    # gain_cols = ["percent_price_gain", "gain", "percent_gain", "annualized_pct_gain"]
+    # gains_df[gain_cols] = gains_df[gain_cols].astype(
+    #     pd.ArrowDtype(pa.decimal256(76, 40)))
+
     return gains_df[[
         "date", "position_id", "position_lot_id", "symbol_description", "market_price", "percent_price_gain",
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
@@ -412,6 +417,7 @@ def buy_recommendations_previously_sold(
         lambda r: pg.compute_percent_price_gain(
             r["price_sold"], r["market_price"]), axis=1
     )
+    
     sold.loc[:, "recommend_buy"] = sold["percent_price_gain"].apply(
         lambda p: p <= -1*config.min_dip_percent
     )

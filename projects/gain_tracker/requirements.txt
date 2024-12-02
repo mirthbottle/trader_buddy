@@ -1,7 +1,8 @@
-"yfinance[nospam,repair]"
+yfinance[nospam,repair]
+rauth
 dagster
 dagster-webserver
-daster-graphql
+dagster-graphql
 dagster-gcp
 dagster-gcp-pandas
 pygsheets
