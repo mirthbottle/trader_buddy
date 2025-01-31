@@ -19,6 +19,7 @@ from gain_tracker.assets.positions import (
     gains, sell_recommendations,
     buy_recommendations_previously_sold, all_recommendations,
     benchmark_values)
+from gain_tracker.assets.sold_positions import missing_positions
 from gain_tracker.assets.company_financials import total_revenue
 from gain_tracker.jobs.daily_jobs import (
     pull_etrade_dailies, pull_etrade_weeklies, recommendations_job
@@ -52,7 +53,8 @@ defs = Definitions(
         gains, sell_recommendations, buy_recommendations_previously_sold,
         all_recommendations,
         benchmark_values, total_revenue,
-        inflation_data, inflation_gsheet
+        inflation_data, inflation_gsheet,
+        missing_positions
         ],
     jobs=[pull_etrade_dailies, pull_etrade_weeklies, recommendations_job],
     resources={

@@ -13,9 +13,9 @@ import pyarrow as pa
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, AssetIn, TimeWindowPartitionMapping,
-    # multi_asset, Output, AssetOut, AssetKey,
-    AssetExecutionContext, Config,
+    asset, AssetExecutionContext, AssetIn, TimeWindowPartitionMapping,
+    # multi_asset, AssetOut, AssetKey,
+    Output, Config,
     )
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,8 @@ last_7days_partition = TimeWindowPartitionMapping(
             )
         }
 )
-def missing_positions(etrade_positions: pd.DataFrame):
+def missing_positions(
+    context: AssetExecutionContext, etrade_positions: pd.DataFrame):
     """
     What's missing from today's open positions compared to
     the last day of the previous week
@@ -55,17 +56,35 @@ def missing_positions(etrade_positions: pd.DataFrame):
     Compute with daily position diffs
     - for each position_lot_id, new quantity - old quantity
     """
-    today_loc = datetime.now(tz=PT_INFO).date()
-    start_date = (today_loc) - timedelta(days=7)
-    print(start_date)
+    partition_date_str = context.partition_key
+    today_loc = date.fromisoformat(partition_date_str)
+    
+    existing_parts = sorted(
+        etrade_positions["date"].unique(), reverse=True)
+    
+    positions_datei = etrade_positions.set_index(["date", "position_lot_id"])
+    
+    cols = ["quantity"]
+    current_positions = positions_datei.loc[existing_parts[0]][cols]
+    prev_positions = positions_datei.loc[existing_parts[1]][cols]
+    
+    changes = pd.merge(
+        prev_positions, current_positions, 
+        left_index=True, right_index=True,
+        how="outer", suffixes=("_prev", None)).fillna(0)
+    changes.loc[:, "quantity_sold"] = changes['quantity_prev'] - changes['quantity']
+    
+    missing_lot_ids = changes.loc[changes['quantity_sold'] > 0]
+    
+    missing_prev_pos = positions_datei.loc[existing_parts[1]].loc[
+        missing_lot_ids.index]
+    
+    # replace prev amount with the quantity changed
+    missing_prev_pos.loc[:, "quantity"] = missing_lot_ids["quantity_sold"]
 
-    positions = (
-        etrade_positions
-        .sort_values(by="date", ascending=False)    
-        .drop_duplicates(
-            subset=["position_lot_id", "quantity"], keep="first")
-        )   
-    return positions
+    return Output(
+        missing_prev_pos, 
+        metadata={"prev_date": existing_parts[1].isoformat()})
 
 @asset(
     partitions_def=weekly_partdef,
