@@ -6,8 +6,10 @@ from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+
 import pandas as pd
 import pygsheets
+import pyarrow as pa
 
 from google.api_core.exceptions import NotFound
 from dagster import (
@@ -26,6 +28,7 @@ from ..resources.etrade_resource import ETrader
 from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
+from ..position import ClosedPosition, OpenPosition
 
 DEFAULT_BENCHMARK_TICKER="IVV"
 PT_INFO = ZoneInfo("America/Los_Angeles")
@@ -264,14 +267,37 @@ def closed_positions(
             left_index=True, right_index=True,
             suffixes=("_pos", None))
         .reset_index()
-    )
+    ).drop_duplicates(subset=closing_cols+["market_value"])
 
     if len(new_closed_positions) > 0:
+        positions = new_closed_positions.apply(
+            lambda r: ClosedPosition(
+                r["position_lot_id"],
+                r["account_id_key"],
+                r["symbol_description"],
+                r["price_paid"],
+                r["date_acquired"],
+                r["quantity"],
+                r["original_qty"],
+                r["market_value"],
+                transaction_id = r["transaction_id"],
+                transaction_fee = r["transaction_fee"],
+                date_closed=r["date_closed"]), axis=1)
+        
+        gmetrics = positions.apply(lambda p: p.compute_gains())
+
+        gm_df = pd.DataFrame(gmetrics.values.tolist())
+
+        closed_gains_df = pd.concat([
+            new_closed_positions.reset_index(drop=True),gm_df],axis=1)
+        
         cols = [
         "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
-        "timestamp", "transaction_id", "transaction_fee"]
-        return new_closed_positions[cols]
+        "timestamp", "transaction_id", "transaction_fee",
+        "percent_price_gain", "gain", "percent_gain",
+        "annualized_pct_gain", "days_held"]
+        return closed_gains_df[cols]
 
 @asset(
         partitions_def=daily_partdef,
@@ -289,29 +315,33 @@ def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
 
+    positions = etrade_positions.apply(
+        lambda r: OpenPosition(
+            r["position_lot_id"],
+            r["account_id_key"],
+            r["symbol_description"],
+            r["price_paid"],
+            r["date_acquired"],
+            r["quantity"],
+            r["original_qty"],
+            r["market_value"]), axis=1)
+    
+    gmetrics = positions.apply(lambda p: p.compute_gains(partition_date))
+
+    gm_df = pd.DataFrame(gmetrics.values.tolist())
     etrade_positions.loc[:, "market_price"] = etrade_positions.apply(
         lambda r: r["market_value"]/r["quantity"], axis=1
     )
-    # need to get historical market prices from yahoo finance
-    etrade_positions.loc[:, "percent_price_gain"] = etrade_positions.apply(
-        lambda r: pg.compute_percent_price_gain(
-            r["price_paid"], r["market_price"]), axis=1)
-    etrade_positions.loc[:, "gain"] = etrade_positions.apply(
-        lambda r: pg.compute_gain(r["percent_price_gain"], r["quantity"], r["price_paid"]),
-        axis=1
-    )
-    etrade_positions.loc[:, "percent_gain"] = etrade_positions.apply(
-        lambda r: pg.compute_percent_gain(r["gain"], r["quantity"], r["price_paid"]),
-        axis=1
-    )
-    etrade_positions[["annualized_pct_gain", "days_held"]] = etrade_positions.apply(
-        lambda r: pg.compute_annualized_percent_gain(
-            r["percent_gain"], r["date_acquired"], partition_date
-        ),
-        axis=1, result_type="expand"
-    )
 
-    return etrade_positions[[
+    gains_df = pd.concat([
+        etrade_positions.reset_index(drop=True),gm_df],axis=1)
+    
+    # print(gains_df.values)
+    # gain_cols = ["percent_price_gain", "gain", "percent_gain", "annualized_pct_gain"]
+    # gains_df[gain_cols] = gains_df[gain_cols].astype(
+    #     pd.ArrowDtype(pa.decimal256(76, 40)))
+
+    return gains_df[[
         "date", "position_id", "position_lot_id", "symbol_description", "market_price", "percent_price_gain",
         "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
 
@@ -387,6 +417,7 @@ def buy_recommendations_previously_sold(
         lambda r: pg.compute_percent_price_gain(
             r["price_sold"], r["market_price"]), axis=1
     )
+    
     sold.loc[:, "recommend_buy"] = sold["percent_price_gain"].apply(
         lambda p: p <= -1*config.min_dip_percent
     )

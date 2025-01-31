@@ -44,6 +44,7 @@ def compute_gain(
     percent_gain * n_shares * start_price
 
     transactions are optional: sum them up outside of this method
+    costs are negative
     """
     gain = percent_price_gain*Decimal(str(n_shares))*Decimal(str(start_price))
     
@@ -77,8 +78,11 @@ def compute_annualized_percent_gain(
         return Decimal('nan'), days
     root_yr = Decimal("1")/pct_yr
 
-    annualized = (percent_gain+Decimal("1"))**root_yr+Decimal("-1")
-    return annualized, days
+    annualized = min(
+        Decimal('1000000'), # max of 1M
+        (percent_gain+Decimal("1"))**root_yr+Decimal("-1"))
+    
+    return annualized, int(days)
 
 
 def compute_annualized_gain(gain: Decimal, days: int):
