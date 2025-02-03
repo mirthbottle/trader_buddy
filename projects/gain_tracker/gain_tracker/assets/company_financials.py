@@ -50,15 +50,17 @@ def get_total_revenues(tickers: pd.DataFrame, ticker_colname:str="Ticker"):
 
 @asset(
         ins={
+            "etrade_positions": AssetIn(
+                partition_mapping=AllPartitionMapping()),
             "closed_positions": AssetIn(
                 partition_mapping=AllPartitionMapping())
         }
 )
 def total_revenue(
-    open_positions_window: pd.DataFrame, closed_positions: pd.DataFrame):
+    etrade_positions: pd.DataFrame, closed_positions: pd.DataFrame):
     """Pull total revenues of open_positions"""
     all_positions = pd.concat(
-        [open_positions_window, closed_positions]
+        [etrade_positions, closed_positions]
     ).drop_duplicates(subset=["symbol_description"])
 
     all_revs = get_total_revenues(

@@ -81,6 +81,7 @@ def missing_positions(
     
     # replace prev amount with the quantity changed
     missing_prev_pos.loc[:, "quantity"] = missing_lot_ids["quantity_sold"]
+    missing_prev_pos.loc[:, "date"] = today_loc
 
     return Output(
         missing_prev_pos, 
