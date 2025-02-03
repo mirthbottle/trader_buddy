@@ -11,7 +11,7 @@ from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.assets.positions import (
     PT_INFO,
     etrade_accounts, etrade_positions, etrade_transactions,
-    sold_transactions, closed_positions,
+    sold_transactions,
     gains, buy_recommendations_previously_sold, sell_recommendations)
 
 TODAY_LOC = datetime.now(tz=PT_INFO).date()
@@ -71,79 +71,6 @@ def test_etrade_positions(
     )
     print(result)
     assert len(result) == 1
-
-@pytest.fixture
-def sample_etrade_positions():
-    data = {
-        "symbol_description": ["AAPL", "GOOGL", "MSFT"],
-        "date_acquired": [
-            date.fromisoformat("2021-01-01"), 
-            date.fromisoformat("2020-05-15"), 
-            date.fromisoformat("2019-11-20")],
-        "price_paid": [150.0, 2000.0, 120.0],
-        "quantity": [100.0, 50.0, 300.0],
-        "market_value": [16000.0, 100000.0, 36000.0],
-        "original_qty": [100, 50, 300],
-        "account_id_key": [101, 102, 103],
-        "position_id": [1001, 1002, 1003],
-        "position_lot_id": [1, 2, 3],
-        "timestamp": [
-            datetime.fromisoformat("2021-09-01 11:00:00"), 
-            datetime.fromisoformat("2021-09-01 11:00:00"), 
-            datetime.fromisoformat("2021-09-01 02:00:00")]
-    }
-    yield pd.DataFrame(data)
-
-
-@pytest.fixture
-def sample_etrade_transactions():
-    data = {
-        "symbol": ["GOOGL", "MSFT"],
-        "quantity": [2, -300],
-        "transaction_type": ["Bought", "Sold"], 
-        "transaction_date": [
-            date.fromisoformat("2024-02-20"), date.fromisoformat("2024-03-26")],
-        "fee": [0.01, 0.01], 
-        "transaction_id": [24, 25],
-        "amount": [-1000.0, 30000.0]
-    }
-    yield pd.DataFrame(data)
-
-@pytest.fixture
-def sample_sold_transactions():
-    data = {
-        "symbol": ["MSFT"],
-        "quantity": [300],
-        "transaction_type": ["Sold"], 
-        "transaction_date": [
-            date.fromisoformat("2024-03-26")],
-        "fee": [0.01], 
-        "transaction_id": [25],
-        "amount": [30000.0]
-    }
-    yield pd.DataFrame(data)
-
-def test_closed_positions(
-        sample_etrade_positions, sample_sold_transactions):
-
-    result = closed_positions(
-        sample_sold_transactions.copy(deep=True),
-        sample_etrade_positions.copy(deep=True), 
-    )
-    print(result)
-    assert len(result) == 1
-    assert result.loc[0, "market_value"] == 30000
-    assert result.loc[0, "transaction_fee"] == 0.01
-    assert result.loc[0, "timestamp"] == datetime(2024, 3, 26, tzinfo=timezone.utc)
-    assert "days_held" in result.columns
-
-    no_msft_pos = sample_etrade_positions.drop(2)
-    result = closed_positions(
-        sample_sold_transactions.copy(deep=True),
-        no_msft_pos,
-    )
-    print(result)
-    assert result is None
 
 def test_gains():
 

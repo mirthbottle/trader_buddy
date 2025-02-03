@@ -15,13 +15,14 @@ from gain_tracker.resources.gsheets_resource import GSheetsResource
 
 from gain_tracker.assets.positions import (
     etrade_accounts, etrade_positions, etrade_transactions,
-    sold_transactions, open_positions_window, closed_positions,
-    gains, sell_recommendations,
+    sold_transactions, gains, sell_recommendations,
     buy_recommendations_previously_sold, all_recommendations,
     benchmark_values)
+from gain_tracker.assets.sold_positions import (
+    missing_positions, closed_positions)
 from gain_tracker.assets.company_financials import total_revenue
 from gain_tracker.jobs.daily_jobs import (
-    pull_etrade_dailies, pull_etrade_weeklies, recommendations_job
+    pull_etrade_dailies
 )
 
 from gain_tracker.assets.economic_indicators import (
@@ -47,14 +48,13 @@ defs = Definitions(
     assets=[
         # positions_count, 
         etrade_accounts, etrade_positions, etrade_transactions,
-        sold_transactions,
-        open_positions_window, closed_positions,
+        sold_transactions, missing_positions, closed_positions,
         gains, sell_recommendations, buy_recommendations_previously_sold,
         all_recommendations,
         benchmark_values, total_revenue,
-        inflation_data, inflation_gsheet
+        inflation_data, inflation_gsheet,
         ],
-    jobs=[pull_etrade_dailies, pull_etrade_weeklies, recommendations_job],
+    jobs=[pull_etrade_dailies],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ.get("GCP_PROJECT", "main-street-labs-test"),  # required

@@ -83,15 +83,8 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     return accounts
 
 @asset(
-        partitions_def=weekly_partdef,
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(transaction_date)"},
-        ins={
-            "etrade_accounts": AssetIn(
-                partition_mapping=TimeWindowPartitionMapping(
-                    allow_nonexistent_upstream_partitions=True
-                )
-            )
-        },
         output_required=False
 )
 def etrade_transactions(
@@ -103,7 +96,7 @@ def etrade_transactions(
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
 
-    end_date_str = (partition_date + timedelta(days=7)).strftime("%m%d%Y")
+    end_date_str = (partition_date + timedelta(days=1)).strftime("%m%d%Y")
     start_date_str = partition_date.strftime("%m%d%Y")
     keys = etrade_accounts["account_id_key"].unique()
     logger.info(f'dates: {start_date_str} to {end_date_str}')
@@ -129,7 +122,7 @@ def etrade_transactions(
         return transactions
 
 @asset(
-        partitions_def=weekly_partdef,
+        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(transaction_date)"},
         output_required=False
 )
@@ -200,104 +193,6 @@ def etrade_positions(
         "timestamp"]
     return positions[pos_cols]
 
-@asset(
-        ins={
-            "etrade_positions": AssetIn(
-                partition_mapping=AllPartitionMapping())
-        },
-
-)
-def open_positions_window(etrade_positions: pd.DataFrame):
-    """Open positions of the week before and week after
-    week starts on Sunday. make sure to include data from the prev week
-    In case some positions get sold Monday or Tuesday
-
-    keep most recent
-    """
-    today_loc = datetime.now(tz=PT_INFO).date()
-    start_date = (today_loc) - timedelta(days=7)
-    print(start_date)
-    
-    positions = (
-        etrade_positions.loc[etrade_positions["date"]>=start_date]
-        .sort_values(by="date", ascending=False)
-        .drop_duplicates(subset=['position_lot_id', "quantity"], keep='first')
-    )
-    return positions
-
-@asset(
-        partitions_def=weekly_partdef,
-        metadata={"partition_expr": "DATETIME(date_closed)"},
-        output_required=False
-)
-def closed_positions(
-    sold_transactions: pd.DataFrame,
-    open_positions_window: pd.DataFrame,
-    
-):
-    """Weekly partition based on sold_transactions
-
-    might need etrade_positions from the previous week, though
-    eg. if something was sold Monday, but etrade_positions was not pulled
-    until after it was sold
-    """
-    
-    closing_cols = [
-        "timestamp", "date_closed", "transaction_fee", "transaction_id"]
-    open_positions = open_positions_window.set_index(
-        ['symbol_description', 'quantity'])
-    max_ts = open_positions["timestamp"].max()
-    missing = open_positions.loc[open_positions["timestamp"] < max_ts].copy()
-    
-    closed_transactions = (
-        sold_transactions
-        .rename(columns={
-            "symbol": "symbol_description",
-            "fee": "transaction_fee", "amount": "market_value",
-            "transaction_date": "date_closed"})
-        .set_index(["symbol_description", "quantity"])
-    )
-    closed_transactions.loc[:, "timestamp"] = closed_transactions[
-        "date_closed"].apply(
-            lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
-    new_closed_positions = (
-        pd.merge(
-            missing,
-            closed_transactions[closing_cols+["market_value"]],
-            left_index=True, right_index=True,
-            suffixes=("_pos", None))
-        .reset_index()
-    ).drop_duplicates(subset=closing_cols+["market_value"])
-
-    if len(new_closed_positions) > 0:
-        positions = new_closed_positions.apply(
-            lambda r: ClosedPosition(
-                r["position_lot_id"],
-                r["account_id_key"],
-                r["symbol_description"],
-                r["price_paid"],
-                r["date_acquired"],
-                r["quantity"],
-                r["original_qty"],
-                r["market_value"],
-                transaction_id = r["transaction_id"],
-                transaction_fee = r["transaction_fee"],
-                date_closed=r["date_closed"]), axis=1)
-        
-        gmetrics = positions.apply(lambda p: p.compute_gains())
-
-        gm_df = pd.DataFrame(gmetrics.values.tolist())
-
-        closed_gains_df = pd.concat([
-            new_closed_positions.reset_index(drop=True),gm_df],axis=1)
-        
-        cols = [
-        "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
-        "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
-        "timestamp", "transaction_id", "transaction_fee",
-        "percent_price_gain", "gain", "percent_gain",
-        "annualized_pct_gain", "days_held"]
-        return closed_gains_df[cols]
 
 @asset(
         partitions_def=daily_partdef,
