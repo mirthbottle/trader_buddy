@@ -39,7 +39,9 @@ def test_missing_positions(sample_etrade_positions, transactions_to_patch):
 
     result = missing_positions(
         context, sample_etrade_positions)
-    result = result.value
+    
+    output = list(result)[0]
+    result = output.value
     assert not result.empty
     assert len(result) == 1
     print(result)
@@ -90,7 +92,8 @@ def test_closed_positions(
         sample_sold_transactions.copy(deep=True),
         sample_missing_positions.copy(deep=True), 
     )
-    result = result.value
+    output = list(result)[0]
+    result = output.value
     print(result)
     assert len(result) == 2
     assert result.loc[1, "market_value"] == 10000
@@ -146,7 +149,8 @@ def test_closed_position_multiple_position_lot_ids_sold(
         sample_sold_multiple_lot_ids.copy(deep=True),
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
-    result = result.value
+    output = list(result)[0]
+    result = output.value
     print(result)
     assert len(result) == 3
     assert result.loc[1, "transaction_fee"] == 0.01
@@ -164,7 +168,8 @@ def test_closed_position_multiple_position_lot_ids_sold(
         sold_1_transaction,
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
-    result = result.value
+    output = list(result)[0]
+    result = output.value
     print(result)
     assert len(result) == 3
     assert result.loc[1, "transaction_fee"] == 0.01*50/160
@@ -194,9 +199,10 @@ def test_closed_position_multiples_with_combo(
         sample_sold_multiples_with_combo.copy(deep=True),
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
-    mdata = result.metadata
+    output = list(result)[0]
+    result = output.value
+    mdata = output.metadata
     print(mdata)
-    result = result.value
     print(result)
     assert len(result) == 3
     assert mdata["unmatched_count"].value == 0
@@ -224,11 +230,12 @@ def test_closed_position_ambiguous_multiples(
         sample_sold_ambiguous_multiples.copy(deep=True),
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
-    mdata = result.metadata
+
+    output = list(result)[0]
+
+    mdata = output.metadata
     print(mdata)
-    result = result.value
     print(result)
-    # assert len(result) == 0
     assert mdata["unmatched_count"].value == 2
     assert mdata["case_flag"].value == 'U'
 
@@ -259,10 +266,10 @@ def test_closed_position_dup_matches(
         sample_sold_ambiguous_multiples.copy(deep=True),
         sample_missing_dup_multiples.copy(deep=True), 
     )
-    mdata = result.metadata
+    output = list(result)[0]
+
+    mdata = output.metadata
     print(mdata)
-    result = result.value
-    print(result)
     # assert len(result) == 0
     assert mdata["unmatched_count"].value == 2
     assert mdata["case_flag"].value == 'M'

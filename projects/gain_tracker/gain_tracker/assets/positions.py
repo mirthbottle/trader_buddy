@@ -13,7 +13,7 @@ import pyarrow as pa
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, AssetIn, TimeWindowPartitionMapping,
+    asset, AssetIn, Output,
     # multi_asset, Output, AssetOut, AssetKey,
     AllPartitionMapping,
     AssetExecutionContext, Config,
@@ -119,7 +119,7 @@ def etrade_transactions(
             lambda d: datetime.fromtimestamp(d/1000).date())
         transactions.drop_duplicates(subset=["transaction_id"], inplace=True)
 
-        return transactions
+        yield Output(transactions)
 
 @asset(
         partitions_def=daily_partdef,
@@ -142,7 +142,7 @@ def sold_transactions(
         "fee", "account_id", "timestamp"]
     
     if len(sold) > 0:
-        return sold[output_cols]
+        yield Output(sold[output_cols])
 
 
 @asset(
@@ -277,7 +277,7 @@ def get_current_price_yf(ticker:str):
         metadata={"partition_expr": "DATETIME(date)"},
         ins={
             "sold_transactions": AssetIn(
-                partition_mapping=AllPartitionMapping()
+                partition_mapping=AllPartitionMapping(),
             )
         }
 )

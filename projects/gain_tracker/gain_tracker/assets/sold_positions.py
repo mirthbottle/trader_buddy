@@ -15,7 +15,7 @@ from google.api_core.exceptions import NotFound
 from dagster import (
     asset, AssetExecutionContext, AssetIn, TimeWindowPartitionMapping,
     # multi_asset, AssetOut, AssetKey,
-    Output, Config,
+    Output, AssetMaterialization
     )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,8 @@ last_7days_partition = TimeWindowPartitionMapping(
             "etrade_positions": AssetIn(
                 partition_mapping=last_7days_partition
             )
-        }
+        },
+        output_required=False
 )
 def missing_positions(
     context: AssetExecutionContext, etrade_positions: pd.DataFrame):
@@ -76,16 +77,17 @@ def missing_positions(
     
     missing_lot_ids = changes.loc[changes['quantity_sold'] > 0]
     
-    missing_prev_pos = positions_datei.loc[existing_parts[1]].loc[
-        missing_lot_ids.index]
+    if len(missing_lot_ids) > 0:
+        missing_prev_pos = positions_datei.loc[existing_parts[1]].loc[
+            missing_lot_ids.index]
     
-    # replace prev amount with the quantity changed
-    missing_prev_pos.loc[:, "quantity"] = missing_lot_ids["quantity_sold"]
-    missing_prev_pos.loc[:, "date"] = today_loc
+        # replace prev amount with the quantity changed
+        missing_prev_pos.loc[:, "quantity"] = missing_lot_ids["quantity_sold"]
+        missing_prev_pos.loc[:, "date"] = today_loc
 
-    return Output(
-        missing_prev_pos, 
-        metadata={"prev_date": existing_parts[1].isoformat()})
+        yield Output(
+            missing_prev_pos, 
+            metadata={"prev_date": existing_parts[1].isoformat()})
 
 @asset(
     partitions_def=daily_partdef,
@@ -261,14 +263,14 @@ def closed_positions(
         "timestamp", "transaction_id", "transaction_fee",
         "percent_price_gain", "gain", "percent_gain",
         "annualized_pct_gain", "days_held"]
-        return Output(
+        yield Output(
             closed_gains_df[cols],
             metadata={
                 'case_flag': case_flag, 'case_message': case_message, 
                 'unmatched_count': unmatched_count}
         )
-    return Output(
-        None, 
+    yield AssetMaterialization(
+        asset_key="closed_positions", 
         metadata={
             'case_flag': case_flag, 'case_message': case_message, 
             'unmatched_count': unmatched_count})
