@@ -298,11 +298,14 @@ def buy_recommendations_previously_sold(
     partition_date = date.fromisoformat(partition_date_str)
 
     sold = sold_transactions.copy()
+    sold_symbols = sold_transactions.drop_duplicates(subset=['symbol'])
     sold.rename(columns={"price": "price_sold"}, inplace=True)
 
-    sold.loc[:, "market_price"] = \
-        sold["symbol"].apply(get_current_price_yf)
-    
+    sold_symbols.loc[:, "market_price"] = \
+        sold_symbols["symbol"].apply(get_current_price_yf)
+    sold = pd.merge(
+        sold, sold_symbols[["symbol", "market_price"]], on="symbol", how="left")
+
     # the time that the price was retrieved
     # but it may be after market is closed
     # so it's not the same as the time of the market_price
