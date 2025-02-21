@@ -21,10 +21,34 @@ import pandas as pd
 from dagster import (
     asset, Output, AssetExecutionContext
 )
-from ..partitions import daily_partdef
+from ..partitions import daily_partdef, monthly_partdef
+
+def attribute_dividend_to_positions(
+        indexed_positions: pd.DataFrame, dividend: pd.Series):
+    """attribute to position_lot_ids according to quantity owned
+
+    dividend is one row of dividends
+    """
+    div_cols = ["transaction_id", "dividend", "dividend_type", "description",
+                    "timestamp", "transaction_date"]
+        
+    positions = indexed_positions.loc[
+        dividend['transaction_date'], dividend['account_id_key'],
+        dividend['symbol_description']].copy(deep=True)
+    total_quantity = positions['quantity'].sum()
+
+    dividend_data = dividend[div_cols].to_dict()
+
+    positions = positions.assign(**dividend_data)
+    positions.loc[:, "total_quantity"] = total_quantity 
+    positions.loc[:, "dividend"] = positions.apply(
+        lambda r: r.dividend * r.quantity / total_quantity, axis=1
+    )
+    print(positions)
+    return positions
 
 @asset(
-    partitions_def=daily_partdef,
+    partitions_def=monthly_partdef,
     metadata={"partition_expr": "DATETIME(transaction_date)"},
     output_required=False
 )
@@ -34,47 +58,48 @@ def position_dividends(
     etrade_accounts: pd.DataFrame,
     etrade_positions: pd.DataFrame,
 ):
-    """Dividend transactions from E-Trade"""
+    """Dividend transactions from E-Trade
+    The dividend transaction date is sometimes a date in the past
+    so that's why we can't use daily_partdef
+
+    But we should use the positions for the day of payout.
+    That may be slighty different per row of transaction.
+    """
     dividends = etrade_transactions.loc[
         etrade_transactions["transaction_type"].str.contains("Dividend")]
     
     if len(dividends) > 0:
+        accounts = etrade_accounts.drop_duplicates(subset=["account_id"])
+
         dividends = (
             dividends.set_index("account_id")
-            .join(etrade_accounts.set_index("account_id")[["account_id_key"]])
+            .join(accounts.set_index("account_id")[["account_id_key"]])
             .rename(
                 columns={
                     "transaction_type": "dividend_type",
                     "symbol": "symbol_description",
                     "amount": "dividend"})
             .reset_index()
-            .set_index(["account_id_key", "symbol_description"])
         )
 
         # dividends will only have 1 record per account_id_key and symbol
-        # we want an inner join
-        # verify that position_lot_id is not duplicated
-        div_cols = ["transaction_id", "dividend", "dividend_type", "description",
-                    "timestamp", "total_quantity"]
+        # we want to pull the positions per 
+        # transaction_date, account_id_key, symbol_description
         
-        position_sums = etrade_positions.groupby(
-            ["account_id_key", "symbol_description"]
-        )[["quantity"]].sum().rename({"quantity": "total_quantity"})
-        
-        dividends = dividends.join(position_sums, how="inner")
-
-        position_divs = etrade_positions.set_index(
-            ["account_id_key", "symbol_description"]).join(
-                dividends[div_cols], how="inner")
-        
-        position_divs.loc[:, "dividends"] = position_divs.apply(
-            lambda r: r.dividend * r.quantity / r.total_quantity, axis=1
+        positions_i = etrade_positions.set_index(
+            ["date", "account_id_key", "symbol_description"]
         )
 
+        position_divs = pd.concat(
+            dividends.apply(
+                lambda r: attribute_dividend_to_positions(positions_i, r),
+                axis=1).values).reset_index()
+        
         output_cols = [
-            "symbol_description", "date", "account_id_key", "position_lot_id",
+            "symbol_description", "account_id_key", "position_lot_id",
             "transaction_id", "dividend", "description", "dividend_type", 
             "timestamp", # use the timestamp from etrade_transactions 
+            "transaction_date",
         ]
         
         yield Output(position_divs[output_cols])
