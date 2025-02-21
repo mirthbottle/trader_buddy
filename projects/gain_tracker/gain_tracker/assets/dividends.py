@@ -31,10 +31,18 @@ def attribute_dividend_to_positions(
     """
     div_cols = ["transaction_id", "dividend", "dividend_type", "description",
                     "timestamp", "transaction_date"]
-        
+    
+    # sometimes the dividend transaction_date is on a weekend
+    # so there won't be etrade_positions for that date
+    # we should select the most recent date before the transaction date then
+
     positions = indexed_positions.loc[
-        dividend['transaction_date'], dividend['account_id_key'],
-        dividend['symbol_description']].copy(deep=True)
+        dividend['account_id_key'],
+        dividend['symbol_description']]
+
+    target_date = max([d for d in positions["date"] if d<=dividend["transaction_date"]])
+    print(target_date)
+    positions = positions.loc[positions["date"] == target_date].copy(deep=True)
     total_quantity = positions['quantity'].sum()
 
     dividend_data = dividend[div_cols].to_dict()
@@ -44,7 +52,6 @@ def attribute_dividend_to_positions(
     positions.loc[:, "dividend"] = positions.apply(
         lambda r: r.dividend * r.quantity / total_quantity, axis=1
     )
-    print(positions)
     return positions
 
 @asset(
@@ -55,7 +62,6 @@ def attribute_dividend_to_positions(
 def position_dividends(
     context: AssetExecutionContext,
     etrade_transactions: pd.DataFrame,
-    etrade_accounts: pd.DataFrame,
     etrade_positions: pd.DataFrame,
 ):
     """Dividend transactions from E-Trade
@@ -66,20 +72,20 @@ def position_dividends(
     That may be slighty different per row of transaction.
     """
     dividends = etrade_transactions.loc[
-        etrade_transactions["transaction_type"].str.contains("Dividend")]
-    
-    if len(dividends) > 0:
-        accounts = etrade_accounts.drop_duplicates(subset=["account_id"])
+        etrade_transactions["transaction_type"].str.contains("Dividend")].copy()
+    non_eqs = dividends.loc[dividends["security_type"] != "EQ"]
+    if len(non_eqs) > 0:
+        print(non_eqs.columns)
+        print(non_eqs.values)
+    dividends = dividends.loc[dividends["security_type"] == "EQ"]
 
+    if len(dividends) > 0:
         dividends = (
-            dividends.set_index("account_id")
-            .join(accounts.set_index("account_id")[["account_id_key"]])
-            .rename(
+            dividends.rename(
                 columns={
                     "transaction_type": "dividend_type",
                     "symbol": "symbol_description",
                     "amount": "dividend"})
-            .reset_index()
         )
 
         # dividends will only have 1 record per account_id_key and symbol
@@ -87,7 +93,7 @@ def position_dividends(
         # transaction_date, account_id_key, symbol_description
         
         positions_i = etrade_positions.set_index(
-            ["date", "account_id_key", "symbol_description"]
+            ["account_id_key", "symbol_description"]
         )
 
         position_divs = pd.concat(

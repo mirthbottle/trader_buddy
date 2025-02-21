@@ -11,15 +11,6 @@ from gain_tracker.assets.dividends import (
 )
 
 @pytest.fixture
-def sample_etrade_accounts():
-    data = {
-        "account_id": [1, 2],
-        "account_id_key": ["Hmz", "Xab"],
-        "date": [date.fromisoformat("2025-01-30")]*2
-    }
-    yield pd.DataFrame(data)
-
-@pytest.fixture
 def sample_etrade_positions():
     data = {
         "position_lot_id": [1, 2, 3],
@@ -35,6 +26,8 @@ def sample_etrade_positions():
 def sample_etrade_dividend_transactions():
     data = {
         "account_id": [1, 1],
+        "account_id_key": ["Hmz", "Hmz"],
+        "security_type": ["EQ"]*2,
         "symbol": ["GOOGL", "MSFT"],
         "quantity": [0]*2,
         "transaction_type": ["Dividend"]*2, 
@@ -52,7 +45,7 @@ def sample_etrade_dividend_transactions():
 def test_attribute_dividend_to_positions(
         sample_etrade_positions, sample_etrade_dividend_transactions):
     i_positions = sample_etrade_positions.set_index(
-        ["date", "account_id_key", "symbol_description"]
+        ["account_id_key", "symbol_description"]
     )
     div_row = sample_etrade_dividend_transactions.rename(
                 columns={
@@ -69,12 +62,12 @@ def test_attribute_dividend_to_positions(
     assert all([q==30 for q in result["total_quantity"].values])
 
 def test_position_dividends(
-        sample_etrade_dividend_transactions, sample_etrade_accounts,
+        sample_etrade_dividend_transactions,
         sample_etrade_positions
 ):
     context = build_asset_context(partition_key="2025-01-30")
     result = position_dividends(
-        context, sample_etrade_dividend_transactions, sample_etrade_accounts,
+        context, sample_etrade_dividend_transactions,
         sample_etrade_positions
     )
     df = list(result)[0].value
