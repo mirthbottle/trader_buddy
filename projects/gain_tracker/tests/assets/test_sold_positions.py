@@ -28,12 +28,8 @@ def sample_etrade_positions():
     }
     return pd.DataFrame(data)
 
-@pytest.fixture
-def transactions_to_patch():
-    return pd.DataFrame()
 
-
-def test_missing_positions(sample_etrade_positions, transactions_to_patch):
+def test_missing_positions(sample_etrade_positions):
 
     context = build_asset_context(partition_key="2025-01-30")
 

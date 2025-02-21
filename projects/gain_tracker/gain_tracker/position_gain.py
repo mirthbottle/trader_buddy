@@ -30,7 +30,10 @@ def compute_percent_price_gain(
     this doesn't include transactions...
     should I be computing the raw gain first instead?
     """
-    pnlp = Decimal(str(end_price))/Decimal(str(start_price))+Decimal("-1")
+
+    pnlp = min(
+        Decimal('1000000'),
+        Decimal(str(end_price))/Decimal(str(start_price)))+Decimal("-1")
     return pnlp
 
 def compute_gain(

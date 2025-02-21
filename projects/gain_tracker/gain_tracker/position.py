@@ -65,6 +65,7 @@ class Position:
 		
 	def compute_gains(self, pricing_date: date) -> GainMetrics:
 		"""compute all the gains needed
+		transaction cost is included
 		"""
 		market_price = self.market_value/self.quantity
 		# need to get historical market prices from yahoo finance
