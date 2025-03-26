@@ -24,7 +24,7 @@ from gain_tracker.assets.sold_positions import (
 from gain_tracker.assets.dividends import position_dividends
 from gain_tracker.assets.company_financials import total_revenue
 from gain_tracker.jobs.daily_jobs import (
-    pull_etrade_dailies
+    pull_etrade_dailies, pull_dividends
 )
 
 from gain_tracker.assets.economic_indicators import (
@@ -58,7 +58,7 @@ defs = Definitions(
         inflation_data, inflation_gsheet,
         position_dividends
         ],
-    jobs=[pull_etrade_dailies],
+    jobs=[pull_etrade_dailies, pull_dividends],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ.get("GCP_PROJECT", "main-street-labs-test"),  # required
