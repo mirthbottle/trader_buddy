@@ -156,13 +156,6 @@ def etrade_monthly_transactions(
     keys = etrade_accounts["account_id_key"].unique()
     logger.info(f'dates: {start_date_str} to {end_date_str}')
     transactions = get_transactions(keys, start_date_str, end_date_str, etrader)
-
-    mask = transactions.applymap(lambda v: v == -0.11)
-    matching_rows = transactions[mask.any(axis=1)]
-    if not matching_rows.empty:
-        print("Row(s) with at least one value equal to -0.11: %s", matching_rows)
-        print(matching_rows.columns)
-        print(matching_rows.values)
     
     if len(transactions) > 0:
         yield Output(transactions)
