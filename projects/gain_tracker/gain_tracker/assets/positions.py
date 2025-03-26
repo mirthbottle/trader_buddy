@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
+from dateutil.relativedelta import relativedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -15,7 +16,7 @@ from google.api_core.exceptions import NotFound
 from dagster import (
     asset, AssetIn, Output,
     # multi_asset, Output, AssetOut, AssetKey,
-    AllPartitionMapping,
+    TimeWindowPartitionMapping, AllPartitionMapping,
     AssetExecutionContext, Config,
     )
 
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 import yfinance as yf
 
-from ..partitions import daily_partdef, weekly_partdef
+from ..partitions import daily_partdef, monthly_partdef
 from ..resources.etrade_resource import ETrader
 from ..resources.gsheets_resource import GSheetsResource
 
@@ -82,6 +83,28 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
 
     return accounts
 
+def get_transactions(keys, start_date_str, end_date_str, etrader):
+    all_transactions = []
+    for k in keys:
+        logger.info(k)
+        ts = etrader.get_transactions(k, date_range=(start_date_str, end_date_str))
+        if ts is not None:
+            ts.loc[:, "accountIdKey"] = k
+            all_transactions.append(ts)
+
+    if len(all_transactions) > 0:
+        transactions = pd.concat(all_transactions)
+        snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
+        transactions.rename(columns=snake_cols, inplace=True)
+        transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
+        transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
+        transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
+            lambda d: datetime.fromtimestamp(d/1000).date())
+        transactions.drop_duplicates(subset=["transaction_id"], inplace=True)
+        return transactions
+    else:
+        return []
+
 @asset(
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(transaction_date)"},
@@ -100,26 +123,50 @@ def etrade_transactions(
     start_date_str = partition_date.strftime("%m%d%Y")
     keys = etrade_accounts["account_id_key"].unique()
     logger.info(f'dates: {start_date_str} to {end_date_str}')
+    transactions = get_transactions(keys, start_date_str, end_date_str, etrader)
 
-    all_transactions = []
-    for k in keys:
-        logger.info(k)
-        ts = etrader.get_transactions(k, date_range=(start_date_str, end_date_str))
-        if ts is not None:
-            ts.loc[:, "accountIdKey"] = k
-            all_transactions.append(ts)
-
-    if len(all_transactions) > 0:
-        transactions = pd.concat(all_transactions)
-        snake_cols = {c: camel_to_snake(c) for c in transactions.columns}
-        transactions.rename(columns=snake_cols, inplace=True)
-        transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
-        transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
-        transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
-            lambda d: datetime.fromtimestamp(d/1000).date())
-        transactions.drop_duplicates(subset=["transaction_id"], inplace=True)
-
+    if len(transactions) > 0:
         yield Output(transactions)
+
+@asset(
+        partitions_def=monthly_partdef,
+        metadata={
+            "partition_expr": "DATETIME(transaction_date)"},
+        ins={
+            "etrade_accounts": AssetIn(
+                partition_mapping=TimeWindowPartitionMapping(
+                    allow_nonexistent_upstream_partitions=True
+                )
+            )
+        },
+        output_required=False
+)
+def etrade_monthly_transactions(
+    context: AssetExecutionContext, etrader: ETrader, etrade_accounts: pd.DataFrame):
+    """Get latest transactions
+
+    start date is the partition_date
+    end date is the end of the month
+    """
+    partition_date_str = context.partition_key
+    partition_date = date.fromisoformat(partition_date_str)
+
+    end_date_str = (partition_date + relativedelta(months=1)).strftime("%m%d%Y")
+    start_date_str = partition_date.strftime("%m%d%Y")
+    keys = etrade_accounts["account_id_key"].unique()
+    logger.info(f'dates: {start_date_str} to {end_date_str}')
+    transactions = get_transactions(keys, start_date_str, end_date_str, etrader)
+
+    mask = transactions.applymap(lambda v: v == -0.11)
+    matching_rows = transactions[mask.any(axis=1)]
+    if not matching_rows.empty:
+        print("Row(s) with at least one value equal to -0.11: %s", matching_rows)
+        print(matching_rows.columns)
+        print(matching_rows.values)
+    
+    if len(transactions) > 0:
+        yield Output(transactions)
+
 
 @asset(
         partitions_def=daily_partdef,

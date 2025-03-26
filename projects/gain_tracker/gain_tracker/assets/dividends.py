@@ -19,9 +19,10 @@ and backwards compatibility. They can be deleted later.
 """
 import pandas as pd
 from dagster import (
-    asset, Output, AssetExecutionContext
+    asset, Output, AssetExecutionContext, 
+    AssetIn, TimeWindowPartitionMapping
 )
-from ..partitions import daily_partdef, monthly_partdef
+from ..partitions import monthly_partdef
 
 def attribute_dividend_to_positions(
         indexed_positions: pd.DataFrame, dividend: pd.Series):
@@ -54,14 +55,23 @@ def attribute_dividend_to_positions(
     )
     return positions
 
+daily_to_monthly = TimeWindowPartitionMapping(
+    allow_nonexistent_upstream_partitions=True
+)
+
 @asset(
     partitions_def=monthly_partdef,
     metadata={"partition_expr": "DATETIME(transaction_date)"},
-    output_required=False
+    output_required=False,
+    ins={
+            "etrade_positions": AssetIn(
+                partition_mapping=daily_to_monthly
+            )
+        }
 )
 def position_dividends(
     context: AssetExecutionContext,
-    etrade_transactions: pd.DataFrame,
+    etrade_monthly_transactions: pd.DataFrame,
     etrade_positions: pd.DataFrame,
 ):
     """Dividend transactions from E-Trade
@@ -71,6 +81,7 @@ def position_dividends(
     But we should use the positions for the day of payout.
     That may be slighty different per row of transaction.
     """
+    etrade_transactions = etrade_monthly_transactions
     dividends = etrade_transactions.loc[
         etrade_transactions["transaction_type"].str.contains("Dividend")].copy()
     non_eqs = dividends.loc[dividends["security_type"] != "EQ"]

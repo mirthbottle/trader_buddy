@@ -13,6 +13,7 @@ from ..assets.positions import (
     gains, sell_recommendations,
     buy_recommendations_previously_sold, all_recommendations,
     benchmark_values)
+from ..assets.dividends import position_dividends
 from gain_tracker.assets.sold_positions import (
     missing_positions, closed_positions)
 
@@ -27,4 +28,3 @@ pull_etrade_dailies = define_asset_job(
         all_recommendations 
     ]
 )
-
