@@ -14,7 +14,8 @@ from gain_tracker.resources.etrade_resource import ETrader
 from gain_tracker.resources.gsheets_resource import GSheetsResource
 
 from gain_tracker.assets.positions import (
-    etrade_accounts, etrade_positions, etrade_transactions,
+    etrade_accounts, etrade_positions, 
+    etrade_transactions, etrade_monthly_transactions,
     sold_transactions, gains, sell_recommendations,
     buy_recommendations_previously_sold, all_recommendations,
     benchmark_values)
@@ -23,7 +24,7 @@ from gain_tracker.assets.sold_positions import (
 from gain_tracker.assets.dividends import position_dividends
 from gain_tracker.assets.company_financials import total_revenue
 from gain_tracker.jobs.daily_jobs import (
-    pull_etrade_dailies
+    pull_etrade_dailies, pull_dividends
 )
 
 from gain_tracker.assets.economic_indicators import (
@@ -48,7 +49,8 @@ print(BQ_DATASET)
 defs = Definitions(
     assets=[
         # positions_count, 
-        etrade_accounts, etrade_positions, etrade_transactions,
+        etrade_accounts, etrade_positions, 
+        etrade_transactions, etrade_monthly_transactions,
         sold_transactions, missing_positions, closed_positions,
         gains, sell_recommendations, buy_recommendations_previously_sold,
         all_recommendations,
@@ -56,7 +58,7 @@ defs = Definitions(
         inflation_data, inflation_gsheet,
         position_dividends
         ],
-    jobs=[pull_etrade_dailies],
+    jobs=[pull_etrade_dailies, pull_dividends],
     resources={
         "io_manager": BigQueryPandasIOManager(
             project=os.environ.get("GCP_PROJECT", "main-street-labs-test"),  # required
