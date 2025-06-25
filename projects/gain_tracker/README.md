@@ -1,5 +1,11 @@
 # Gain Tracker ETL
 
+## Install
+
+```
+export PATH="$PATH:/home/vscode/.local/bin"
+```
+
 ## Local Testing
 
 - cd to `projects/gain_tracker/`

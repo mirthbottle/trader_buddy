@@ -1,4 +1,4 @@
-yfinance[nospam,repair]
+yfinance[nospam,repair] >= 0.2.63
 rauth
 dagster
 dagster-webserver
