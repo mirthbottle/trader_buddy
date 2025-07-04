@@ -22,7 +22,9 @@ from ..partitions import monthly_partdef, daily_to_monthly
         )
     }
 )
-def transfer_transactions(etrade_transactions: pd.DataFrame) -> pd.DataFrame:
+def transfer_transactions(
+    etrade_transactions: pd.DataFrame
+):
     """Transfer transactions from E-Trade
 
     This asset processes transfer transactions and returns a DataFrame
@@ -31,14 +33,29 @@ def transfer_transactions(etrade_transactions: pd.DataFrame) -> pd.DataFrame:
     and filters for transactions of type 'Transfer', 'Online Transfer'
     or 'Contribution'
     It then maps to a monthly partitioned DataFrame indexed by account_id_key
+
+    Output:
+        pd.DataFrame: A DataFrame containing transfer transactions with the following columns:
+            - transaction_id: Unique identifier for the transaction
+            - transaction_date: Date of the transaction
+            - description: Source of transfer if amount < 0, otherwise destination
+            - transaction_type: Type of the transaction (Transfer, Online Transfer, Contribution)
+            - amount: Amount of the transaction
+            - fee: Fee associated with the transaction
+            - account_id: Identifier for the account associated with the transaction
+            - timestamp: Timestamp of the transaction
     """
     # Filter for transfer transactions
     transfers = etrade_transactions[
-        etrade_transactions['transaction_type'] == 'TRANSFER'
+        etrade_transactions['transaction_type'].isin(
+            ['Transer', 'Online Transfer','Contribution'])
     ].copy(deep=True)
 
-    # Ensure the DataFrame is indexed by account_id_key and symbol_description
-    transfers.set_index(['account_id_key'], inplace=True)
+    output_cols = [
+        "transaction_id", "transaction_date", "transaction_type",
+        "description", "amount",
+        "fee", "account_id", "timestamp"]    
 
-    # Return the processed transfers DataFrame
-    return transfers     
+    if len(transfers) > 0:
+        # If no transfers, return an empty DataFrame with the expected columns
+        yield Output(transfers[output_cols])
