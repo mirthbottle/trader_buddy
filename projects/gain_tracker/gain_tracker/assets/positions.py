@@ -6,7 +6,6 @@ from typing import Optional
 import re
 from datetime import date, datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pygsheets
@@ -30,9 +29,9 @@ from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
 from ..position import ClosedPosition, OpenPosition
+from . import PT_INFO
 
 DEFAULT_BENCHMARK_TICKER="IVV"
-PT_INFO = ZoneInfo("America/Los_Angeles")
 
 # name is wrong
 # positions_data = SourceAsset(key="positions_dec")
