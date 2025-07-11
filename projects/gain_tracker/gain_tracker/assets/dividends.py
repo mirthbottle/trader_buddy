@@ -20,9 +20,9 @@ and backwards compatibility. They can be deleted later.
 import pandas as pd
 from dagster import (
     asset, Output, AssetExecutionContext, 
-    AssetIn, TimeWindowPartitionMapping
+    AssetIn
 )
-from ..partitions import monthly_partdef
+from ..partitions import monthly_partdef, daily_to_monthly
 
 def attribute_dividend_to_positions(
         indexed_positions: pd.DataFrame, dividend: pd.Series):
@@ -55,9 +55,6 @@ def attribute_dividend_to_positions(
     )
     return positions
 
-daily_to_monthly = TimeWindowPartitionMapping(
-    allow_nonexistent_upstream_partitions=True
-)
 
 @asset(
     partitions_def=monthly_partdef,
