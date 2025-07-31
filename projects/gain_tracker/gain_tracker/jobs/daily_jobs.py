@@ -21,7 +21,7 @@ from gain_tracker.assets.sold_positions import (
 pull_etrade_dailies = define_asset_job(
     "pull_etrade_dailies",
     selection=[
-        etrade_accounts, etrade_positions,
+        etrade_positions,
         etrade_transactions, sold_transactions,
         missing_positions, closed_positions,
         gains, sell_recommendations,
