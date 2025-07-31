@@ -13,7 +13,7 @@ import pyarrow as pa
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, AssetIn, Output,
+    asset, AssetIn, Output, LastPartitionMapping,
     # multi_asset, Output, AssetOut, AssetKey,
     TimeWindowPartitionMapping, AllPartitionMapping,
     AssetExecutionContext, Config,
@@ -52,7 +52,6 @@ def camel_to_snake(camel_case):
 
 @asset(
         output_required=False,
-        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"},
 )
 def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
