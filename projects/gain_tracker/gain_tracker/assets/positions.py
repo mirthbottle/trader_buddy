@@ -52,7 +52,6 @@ def camel_to_snake(camel_case):
 
 @asset(
         output_required=False,
-        partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"},
 )
 def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
@@ -106,9 +105,6 @@ def get_transactions(keys, start_date_str, end_date_str, etrader):
 
 @asset(
         partitions_def=daily_partdef,
-        ins={
-            "etrade_accounts": AssetIn(LastPartitionMapping())
-        },
         metadata={"partition_expr": "DATETIME(transaction_date)"},
         output_required=False
 )
@@ -190,9 +186,6 @@ def sold_transactions(
 @asset(
         output_required=False,
         partitions_def=daily_partdef,
-        ins={
-            "etrade_accounts": AssetIn(LastPartitionMapping())
-        },
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def etrade_positions(
