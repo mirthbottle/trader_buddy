@@ -13,7 +13,7 @@ import pyarrow as pa
 
 from google.api_core.exceptions import NotFound
 from dagster import (
-    asset, AssetIn, Output,
+    asset, AssetIn, Output, LastPartitionMapping,
     # multi_asset, Output, AssetOut, AssetKey,
     TimeWindowPartitionMapping, AllPartitionMapping,
     AssetExecutionContext, Config,
@@ -106,6 +106,9 @@ def get_transactions(keys, start_date_str, end_date_str, etrader):
 
 @asset(
         partitions_def=daily_partdef,
+        ins={
+            "etrade_accounts": AssetIn(LastPartitionMapping())
+        },
         metadata={"partition_expr": "DATETIME(transaction_date)"},
         output_required=False
 )
@@ -187,6 +190,9 @@ def sold_transactions(
 @asset(
         output_required=False,
         partitions_def=daily_partdef,
+        ins={
+            "etrade_accounts": AssetIn(LastPartitionMapping())
+        },
         metadata={"partition_expr": "DATETIME(date)"}
 )
 def etrade_positions(
