@@ -6,7 +6,7 @@ from dagster import (
 )
 
 from gain_tracker.assets.sold_positions import (
-    missing_positions, closed_positions
+    missing_positions, closed_positions, ClosedPositionConfig
 )
 
 
@@ -80,11 +80,12 @@ def sample_sold_transactions():
     }
     yield pd.DataFrame(data)
 
-
+default_config = ClosedPositionConfig(sold_days_ago=1)
 def test_closed_positions(
         sample_sold_transactions, sample_missing_positions):
 
     result = closed_positions(
+        default_config,
         sample_sold_transactions.copy(deep=True),
         sample_missing_positions.copy(deep=True), 
     )
@@ -142,6 +143,7 @@ def test_closed_position_multiple_position_lot_ids_sold(
         sample_sold_multiple_lot_ids, sample_missing_positions_multiple_lot_ids):
     
     result = closed_positions(
+        default_config,
         sample_sold_multiple_lot_ids.copy(deep=True),
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
@@ -161,6 +163,7 @@ def test_closed_position_multiple_position_lot_ids_sold(
     sold_1_transaction.loc[0, "amount"] = 32000.0
 
     result = closed_positions(
+        default_config,
         sold_1_transaction,
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
@@ -192,6 +195,7 @@ def test_closed_position_multiples_with_combo(
         sample_sold_multiples_with_combo, sample_missing_positions_multiple_lot_ids):
     # 3 position_lot_ids were sold by AAPL, but only 2 transactions
     result = closed_positions(
+        default_config,
         sample_sold_multiples_with_combo.copy(deep=True),
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
@@ -223,6 +227,7 @@ def test_closed_position_ambiguous_multiples(
         sample_sold_ambiguous_multiples, sample_missing_positions_multiple_lot_ids):
     # 3 position_lot_ids were sold by AAPL, but only 2 transactions
     result = closed_positions(
+        default_config,
         sample_sold_ambiguous_multiples.copy(deep=True),
         sample_missing_positions_multiple_lot_ids.copy(deep=True), 
     )
@@ -259,6 +264,7 @@ def test_closed_position_dup_matches(
     # but we don't know how to match them. 
     # they must be manually matched bc the price_paid and date_acquired will be different
     result = closed_positions(
+        default_config,
         sample_sold_ambiguous_multiples.copy(deep=True),
         sample_missing_dup_multiples.copy(deep=True), 
     )

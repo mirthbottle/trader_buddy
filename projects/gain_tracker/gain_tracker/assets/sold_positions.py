@@ -15,7 +15,7 @@ from google.api_core.exceptions import NotFound
 from dagster import (
     asset, AssetExecutionContext, AssetIn, TimeWindowPartitionMapping,
     # multi_asset, AssetOut, AssetKey,
-    Output, AssetMaterialization
+    Output, Config, AssetMaterialization
     )
 
 logger = logging.getLogger(__name__)
@@ -89,12 +89,22 @@ def missing_positions(
             missing_prev_pos, 
             metadata={"prev_date": existing_parts[1].isoformat()})
 
+class ClosedPositionConfig(Config):
+    sold_days_ago: int = 1
+
+
 @asset(
-    partitions_def=daily_partdef,
-    metadata={"partition_expr": "DATETIME(date_closed)"},
-    output_required=False
+        partitions_def=daily_partdef,
+        metadata={"partition_expr": "DATETIME(date_closed)"},
+        ins={
+                "sold_transactions": AssetIn(
+                    partition_mapping=last_7days_partition
+                )
+            },
+        output_required=False
 )
 def closed_positions(
+    config: ClosedPositionConfig,
     sold_transactions: pd.DataFrame, missing_positions: pd.DataFrame
 ):
     """
@@ -119,6 +129,13 @@ def closed_positions(
     5. (case flag M) multiple sale transactions where each transaction has the same quantity
       The merge will result in duplicates bc of combos. 
     """
+    if config.sold_days_ago > 1:
+        dates_sold = sorted(
+            sold_transactions["transaction_date"].unique(),
+            reverse=True)[0:config.sold_days_ago]
+        sold_transactions = sold_transactions.loc[
+            sold_transactions["transaction_date"].isin(dates_sold)]
+
     case_flag = ""
     case_message = ""
     unmatched_count = 0
