@@ -152,7 +152,7 @@ etrader:
 
         return accounts
     
-    def account_balance(
+    def get_account_balance(
             self, account_id_key:str, inst_type:str="BROKERAGE"):
         """GET request for the account balance
 
@@ -161,14 +161,20 @@ etrader:
         account_balances_url = f"{self.base_url}/v1/accounts/{account_id_key}/balance.json"
 
         response = self.session.get(
-            account_balances_url, params = {"instType": inst_type})
+            account_balances_url, params = {"instType": inst_type, "realTimeNAV": True})
         
         if response is None or response.status_code != 200:
             logger.debug("Response Body: %s", response)
             return None
 
-        balance = response.json()["BalanceResponse"]
-        return balance
+        computed_balance = response.json()["BalanceResponse"]
+        data = {**computed_balance["Cash"], **computed_balance["Computed"]["RealTimeValues"]}
+        # data["accountIdKey"] = account_id_key
+        data["netCash"] = computed_balance["Computed"]["netCash"]
+        data["settledCashforInvestment"] = computed_balance["Computed"]["settledCashForInvestment"]
+        data["unSettledCashforInvestment"] = computed_balance["Computed"]["unSettledCashForInvestment"]
+        data["accountId"] = computed_balance["accountId"]
+        return pd.Series(data)
     
     def view_portfolio(
             self, account_id_key:str, totals_required:bool=True,
