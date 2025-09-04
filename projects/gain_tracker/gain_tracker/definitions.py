@@ -22,6 +22,7 @@ from gain_tracker.assets.positions import (
 from gain_tracker.assets.sold_positions import (
     missing_positions, closed_positions)
 from gain_tracker.assets.dividends import position_dividends
+from gain_tracker.assets.portfolio_performance import portfolio_balances
 from gain_tracker.assets.company_financials import total_revenue
 from gain_tracker.jobs.daily_jobs import (
     pull_etrade_dailies, pull_dividends
@@ -31,15 +32,6 @@ from gain_tracker.assets.economic_indicators import (
     inflation_data, inflation_gsheet
 )
 
-@asset
-def positions_count(
-    positions_dec:pd.DataFrame
-):
-    """Dummy asset
-    """
-    print(len(positions_dec))
-    return positions_dec
-
 if os.getenv("ENV", "dev") == "dev":
     BQ_DATASET = "gain_tracker_dev"
 else:
@@ -48,7 +40,6 @@ print(BQ_DATASET)
 
 defs = Definitions(
     assets=[
-        # positions_count, 
         etrade_accounts, etrade_positions, 
         etrade_transactions, etrade_monthly_transactions,
         sold_transactions, missing_positions, closed_positions,
@@ -56,7 +47,8 @@ defs = Definitions(
         all_recommendations,
         benchmark_values, total_revenue,
         inflation_data, inflation_gsheet,
-        position_dividends
+        position_dividends,
+        portfolio_balances
         ],
     jobs=[pull_etrade_dailies, pull_dividends],
     resources={
