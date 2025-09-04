@@ -8,6 +8,23 @@ It should take into account transfers in and out of the account
 """
 import pandas as pd
 
+def compute_portfolio_gains(portfolio_balances: pd.DataFrame):
+    """Compute portfolio gain
+
+    For each account Id key and the latest month,
+    compute the GainMetrics like for positions
+    but take into account transfers in and out of the account
+    
+    totalaccountvalue
+    """
+    max_date = portfolio_balances['date'].max()
+    current_acct_value = portfolio_balances.set_index("date").loc[
+        max_date, "totalaccountvalue"]
+
+    prev_balances = portfolio_balances.loc[
+        portfolio_balances['date'] < max_date].copy()
+    prev_balances.loc[:, "current_account_value"] = current_acct_value
+    
 
 class Portfolio:
     """Portfolio class

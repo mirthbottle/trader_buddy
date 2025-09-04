@@ -3,7 +3,6 @@ gain_tracker.assets.positions
 """
 import logging
 from typing import Optional
-import re
 from datetime import date, datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
 
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 import yfinance as yf
 
 from ..partitions import daily_partdef, monthly_partdef
-from ..resources.etrade_resource import ETrader
+from ..resources.etrade_resource import ETrader, camel_to_snake
 from ..resources.gsheets_resource import GSheetsResource
 
 from .. import position_gain as pg
@@ -35,20 +34,6 @@ DEFAULT_BENCHMARK_TICKER="IVV"
 
 # name is wrong
 # positions_data = SourceAsset(key="positions_dec")
-
-def camel_to_snake(camel_case):
-    """convert to something bigquery-friendly
-
-    move this to a formatting io location, maybe in resources?
-    ideally it would go in a new lib project. not sure how to import that
-    """
-    # Use regular expressions to split the string at capital letters
-    cc_adj = camel_case[0].upper()+camel_case[1:]
-    words = re.findall(r'[A-Z][a-z0-9]*', cc_adj)
-    # Join the words with underscores and convert to lowercase
-    snake_case = '_'.join(words).lower()
-    return snake_case
-
 
 @asset(
         output_required=False,

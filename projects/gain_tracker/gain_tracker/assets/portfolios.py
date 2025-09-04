@@ -16,7 +16,7 @@ import pandas as pd
 from dagster import asset, Output, AssetIn, TimeWindowPartitionMapping
 
 from ..partitions import monthly_partdef
-from ..resources.etrade_resource import ETrader
+from ..resources.etrade_resource import ETrader, camel_to_snake
 
 def get_account_balances(keys: list[str], etrader: ETrader) -> pd.DataFrame:
     """Get balances for a list of account keys"""
@@ -28,7 +28,10 @@ def get_account_balances(keys: list[str], etrader: ETrader) -> pd.DataFrame:
             balances.append(balance)
     if len(balances) == 0:
         return pd.DataFrame([])
-    return pd.DataFrame(balances)
+    balances_df =  pd.DataFrame(balances)
+    snake_cols = {c:camel_to_snake(c) for c in balances_df.columns}
+    balances_df.rename(columns=snake_cols, inplace=True)
+    return balances_df
 
 @asset(
         partitions_def=monthly_partdef,
@@ -84,6 +87,9 @@ def portfolio_gains(
     if portfolio_balances.empty:
         return pd.DataFrame([])
 
+    acct_groups = portfolio_balances.groupby('account_id_key')
+
+    
     # Convert date column to datetime
     portfolio_balances['date'] = pd.to_datetime(portfolio_balances['date'])
 

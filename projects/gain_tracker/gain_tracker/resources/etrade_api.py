@@ -171,8 +171,8 @@ etrader:
         data = {**computed_balance["Cash"], **computed_balance["Computed"]["RealTimeValues"]}
         # data["accountIdKey"] = account_id_key
         data["netCash"] = computed_balance["Computed"]["netCash"]
-        data["settledCashforInvestment"] = computed_balance["Computed"]["settledCashForInvestment"]
-        data["unSettledCashforInvestment"] = computed_balance["Computed"]["unSettledCashForInvestment"]
+        data["settledCashForInvestment"] = computed_balance["Computed"]["settledCashForInvestment"]
+        data["unsettledCashForInvestment"] = computed_balance["Computed"]["unSettledCashForInvestment"]
         data["accountId"] = computed_balance["accountId"]
         return pd.Series(data)
     

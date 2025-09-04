@@ -22,7 +22,7 @@ from gain_tracker.assets.positions import (
 from gain_tracker.assets.sold_positions import (
     missing_positions, closed_positions)
 from gain_tracker.assets.dividends import position_dividends
-from gain_tracker.assets.portfolio_performance import portfolio_balances
+from gain_tracker.assets.portfolios import portfolio_balances
 from gain_tracker.assets.company_financials import total_revenue
 from gain_tracker.jobs.daily_jobs import (
     pull_etrade_dailies, pull_dividends
