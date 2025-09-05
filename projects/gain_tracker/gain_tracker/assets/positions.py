@@ -329,6 +329,8 @@ def buy_recommendations_previously_sold(
     sold = pd.merge(
         sold, sold_symbols[["symbol", "market_price"]], on="symbol", how="left")
 
+    # ignore the ones where we can't get a market price
+    sold = sold.loc[pd.notnull(sold["market_price"])].copy(deep=True)
     # the time that the price was retrieved
     # but it may be after market is closed
     # so it's not the same as the time of the market_price
