@@ -44,17 +44,16 @@ def compute_portfolio_gains(
         portfolio_balances,
         monthly_transfer_totals,
         how='left',
-        on=['account_id', 'month']
+        on=['account_id', 'month'],
     ).sort_values(by='month', ascending=False)
-
-    balances_transfers.loc[:, "total_transfer_amount"] = balances_transfers[
-        'total_transfer_amount'].fillna(0)
+    
+    balances_transfers.loc[:, "tta"] = balances_transfers[
+        'total_transfer_amount'].fillna(0).astype(float, copy=True)
     
     balances_transfers["cumulative_transfers"] = (
         balances_transfers
-        .groupby('account_id')['total_transfer_amount'].cumsum()
+        .groupby('account_id')['tta'].cumsum()
     )
-    # print(balances_transfers)
     
     prev_balances = balances_transfers.loc[
         balances_transfers['month'] < max_date].set_index("account_id")
