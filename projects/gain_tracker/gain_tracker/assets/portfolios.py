@@ -36,7 +36,7 @@ def get_account_balances(keys: list[str], etrader: ETrader) -> pd.DataFrame:
 @asset(
         partitions_def=monthly_partdef,
         metadata={
-            "partition_expr": "DATETIME(transaction_date)"},
+            "partition_expr": "DATETIME(month)"},
 )
 def portfolio_balances(context, etrader: ETrader, etrade_accounts: pd.DataFrame) -> Output:
     """
@@ -48,7 +48,7 @@ def portfolio_balances(context, etrader: ETrader, etrade_accounts: pd.DataFrame)
     keys = etrade_accounts['account_id_key'].unique().tolist()
 
     balances = get_account_balances(keys, etrader)
-    balances.loc[:, 'date'] = partition_date
+    balances.loc[:, 'month'] = partition_date
     balances.loc[:, "timestamp"] = datetime.now(timezone.utc)
 
     return Output(balances)
@@ -62,7 +62,7 @@ last_12months_partition = TimeWindowPartitionMapping(
 @asset(
     partitions_def=monthly_partdef,
     metadata={
-        "partition_expr": "DATETIME(date)"
+        "partition_expr": "DATETIME(month)"
     },
     ins={
         "portfolio_balances": AssetIn(
@@ -90,10 +90,7 @@ def portfolio_gains(
     acct_groups = portfolio_balances.groupby('account_id_key')
 
     
-    # Convert date column to datetime
-    portfolio_balances['date'] = pd.to_datetime(portfolio_balances['date'])
-
     # Sort by date
-    portfolio_balances = portfolio_balances.sort_values(by='date')
+    portfolio_balances = portfolio_balances.sort_values(by='month')
 
     return portfolio_balances
