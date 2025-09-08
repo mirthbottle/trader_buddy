@@ -34,7 +34,9 @@ def compute_portfolio_gains(
     compute the GainMetrics like for positions
     but take into account transfers in and out of the account
     
-    total_account_value
+    output dataframe will have columns:
+    account_id, month, percent_gain, current_account_value,
+    total_account_value, total_transfer_amount, tta, cumulative_transfers
     """
     max_date = portfolio_balances['month'].max()
     current_acct_values = portfolio_balances.set_index(
