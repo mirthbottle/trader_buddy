@@ -258,8 +258,9 @@ def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
             r["quantity"],
             r["original_qty"],
             r["market_value"]), axis=1)
-    
-    gmetrics = positions.apply(lambda p: p.compute_gains(partition_date))
+
+    gmetrics = positions.apply(
+        lambda p: p.compute_gains(partition_date))
 
     gm_df = pd.DataFrame(gmetrics.values.tolist())
     etrade_positions.loc[:, "market_price"] = etrade_positions.apply(
@@ -341,17 +342,23 @@ def buy_recommendations_previously_sold(
 
     sold_symbols.loc[:, "market_price"] = \
         sold_symbols["symbol"].apply(get_current_price_yf)
+
     sold = pd.merge(
         sold, sold_symbols[["symbol", "market_price"]], on="symbol", how="left")
+    sold = sold.loc[pd.notnull(sold["market_price"])]
 
     # the time that the price was retrieved
     # but it may be after market is closed
     # so it's not the same as the time of the market_price
     sold.loc[:, "timestamp"] = datetime.now(timezone.utc)
     
+    def compute_percent_price_gain_row(r):
+        # print(f"{r["symbol"]}: {r["price_sold"]}, {r["market_price"]}")
+        return pg.compute_percent_price_gain(
+            r["price_sold"], r["market_price"])
+    
     sold.loc[:, "percent_price_gain"] = sold.apply(
-        lambda r: pg.compute_percent_price_gain(
-            r["price_sold"], r["market_price"]), axis=1
+        compute_percent_price_gain_row, axis=1
     )
     
     sold.loc[:, "recommend_buy"] = sold["percent_price_gain"].apply(
