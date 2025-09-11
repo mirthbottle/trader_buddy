@@ -129,12 +129,16 @@ def closed_positions(
     5. (case flag M) multiple sale transactions where each transaction has the same quantity
       The merge will result in duplicates bc of combos. 
     """
+    dates_sold = sorted(
+        sold_transactions["transaction_date"].unique(),
+        reverse=True)[0:config.sold_days_ago]
+
     if config.sold_days_ago > 1:
-        dates_sold = sorted(
-            sold_transactions["transaction_date"].unique(),
-            reverse=True)[0:config.sold_days_ago]
         sold_transactions = sold_transactions.loc[
             sold_transactions["transaction_date"].isin(dates_sold)]
+    else:
+        sold_transactions = sold_transactions.loc[
+            sold_transactions["transaction_date"] == dates_sold[0]]
 
     case_flag = ""
     case_message = ""
@@ -247,6 +251,7 @@ def closed_positions(
         ~closed_transactions["transaction_id"].isin(
             new_closed_positions["transaction_id"])]
     if len(closed3) > unmatched_count:
+        print(f"unmatched: \n {closed3}")
         case_flag += 'U'
         case_message = "unmatched transactions left over"
         unmatched_count = len(closed3)
@@ -273,7 +278,8 @@ def closed_positions(
 
         closed_gains_df = pd.concat([
             new_closed_positions.reset_index(drop=True),gm_df],axis=1)
-        
+
+        print(f"closed_gains_df:\n{closed_gains_df}")        
         cols = [
         "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
