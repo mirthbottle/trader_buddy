@@ -97,7 +97,8 @@ def get_transactions(keys, start_date_str, end_date_str, etrader):
         transactions.loc[:, "transaction_id"] = transactions["transaction_id"].astype("int64")
         transactions.loc[:, "timestamp"] = datetime.now(timezone.utc)
         transactions.loc[:, "transaction_date"] = transactions["transaction_date"].apply(
-            lambda d: datetime.fromtimestamp(d/1000).date())
+            lambda d: datetime.fromtimestamp(d/1000, tz=timezone.utc).astimezone(
+                PT_INFO).date())
         transactions.drop_duplicates(subset=["transaction_id"], inplace=True)
         return transactions
     else:

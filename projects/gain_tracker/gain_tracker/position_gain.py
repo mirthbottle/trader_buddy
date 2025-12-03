@@ -5,8 +5,8 @@
 from typing import Optional
 import logging
 from datetime import datetime
-from decimal import Decimal, getcontext
-getcontext().prec = 12
+from decimal import Decimal, getcontext, ROUND_HALF_UP
+getcontext().prec = 38
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def compute_percent_price_gain(
 
 def compute_gain(
         percent_price_gain: Decimal, n_shares: float, start_price: float,
-        transactions_value: Optional[Decimal]=Decimal("0")
+        transactions_value: Decimal=Decimal("0")
         ) -> Decimal:
     """Absolute gain with transactions included
 
@@ -51,7 +51,8 @@ def compute_gain(
     """
     gain = percent_price_gain*Decimal(str(n_shares))*Decimal(str(start_price))
     
-    return gain+transactions_value
+    total_gain = gain+transactions_value+Decimal('0.000000000000000000000001')
+    return total_gain
     
 
 def compute_percent_gain(

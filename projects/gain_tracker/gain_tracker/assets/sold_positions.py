@@ -95,7 +95,14 @@ class ClosedPositionConfig(Config):
 
 @asset(
         partitions_def=daily_partdef,
-        metadata={"partition_expr": "DATETIME(date_closed)"},
+        metadata={
+            "partition_expr": "DATETIME(date_closed)",
+            "job_config": {
+                "schema": [
+                    {"name": "gain", "type": "BIGNUMERIC", "mode": "NULLABLE"},
+                # Add other columns as needed
+            ]}
+        },
         ins={
                 "sold_transactions": AssetIn(
                     partition_mapping=last_7days_partition
@@ -132,13 +139,13 @@ def closed_positions(
     dates_sold = sorted(
         sold_transactions["transaction_date"].unique(),
         reverse=True)[0:config.sold_days_ago]
-
-    if config.sold_days_ago > 1:
-        sold_transactions = sold_transactions.loc[
-            sold_transactions["transaction_date"].isin(dates_sold)]
-    else:
-        sold_transactions = sold_transactions.loc[
-            sold_transactions["transaction_date"] == dates_sold[0]]
+    print(f"dates sold: {dates_sold}")
+    # if config.sold_days_ago > 1:
+    sold_transactions = sold_transactions.loc[
+        sold_transactions["transaction_date"].isin(dates_sold)]
+    # else:
+    #    sold_transactions = sold_transactions.loc[
+    #         sold_transactions["transaction_date"] == dates_sold[0]]
 
     case_flag = ""
     case_message = ""
