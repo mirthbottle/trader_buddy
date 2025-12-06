@@ -10,6 +10,7 @@ from dateutil.relativedelta import relativedelta
 import pandas as pd
 import pygsheets
 import pyarrow as pa
+from decimal import Decimal
 
 from google.api_core.exceptions import NotFound
 from dagster import (
@@ -271,14 +272,17 @@ def gains(context: AssetExecutionContext, etrade_positions: pd.DataFrame):
     gains_df = pd.concat([
         etrade_positions.reset_index(drop=True),gm_df],axis=1)
     
-    # print(gains_df.values)
-    # gain_cols = ["percent_price_gain", "gain", "percent_gain", "annualized_pct_gain"]
-    # gains_df[gain_cols] = gains_df[gain_cols].astype(
+    gain_cols = [
+        "market_price", 
+        "percent_price_gain", "gain", "percent_gain", "annualized_pct_gain"]
+    
+    gains_df[gain_cols] = gains_df[gain_cols].astype("float64")
     #     pd.ArrowDtype(pa.decimal256(76, 40)))
-
+    
     return gains_df[[
-        "date", "position_id", "position_lot_id", "symbol_description", "market_price", "percent_price_gain",
-        "gain", "percent_gain", "annualized_pct_gain", "days_held"]]
+        "date", "position_id", "position_lot_id", "symbol_description", "market_price",
+        "percent_price_gain", "gain", "percent_gain", "annualized_pct_gain", 
+        "days_held"]]
 
 
 @asset(
