@@ -452,6 +452,8 @@ def all_recommendations(
         buy_recommendations_previously_sold.rename(columns=buy_colmap)])[
             output_cols]
     
+    recs["percent_price_gain"] = recs["percent_price_gain"].astype("float64")
+
     recs_gs = recs.copy(deep=True)
     recs_gs["date"] = recs_gs["date"].apply(date_to_str)
     recs_gs["date_sold"] = recs_gs["date_sold"].apply(date_to_str)
