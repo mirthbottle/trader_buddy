@@ -21,5 +21,7 @@ monthly_partdef = MonthlyPartitionsDefinition(
     start_date=PARTITIONS_START_DATE, end_offset=1)
 
 daily_to_monthly = TimeWindowPartitionMapping(
+    start_offset=-1,
+    end_offset=-1,
     allow_nonexistent_upstream_partitions=True
 )

@@ -41,7 +41,13 @@ def attribute_dividend_to_positions(
         dividend['account_id_key'],
         dividend['symbol_description']]
 
-    target_date = max([d for d in positions["date"] if d<=dividend["transaction_date"]])
+    position_dates = [d for d in positions["date"] if d<=dividend["transaction_date"]]
+    if len(position_dates) == 0:
+        # no positions before the dividend date
+        # return empty dataframe
+        print("No positions found for dividend:", dividend.to_dict())
+        return pd.DataFrame(columns=positions.columns.tolist()+div_cols)
+    target_date = max(position_dates)
     print(target_date)
     positions = positions.loc[positions["date"] == target_date].copy(deep=True)
     total_quantity = positions['quantity'].sum()
@@ -103,7 +109,6 @@ def position_dividends(
         positions_i = etrade_positions.set_index(
             ["account_id_key", "symbol_description"]
         )
-
         position_divs = pd.concat(
             dividends.apply(
                 lambda r: attribute_dividend_to_positions(positions_i, r),
