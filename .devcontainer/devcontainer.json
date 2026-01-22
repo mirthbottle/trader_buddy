@@ -1,0 +1,31 @@
+{
+	"name": "Python 3",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "."
+	},
+	"remoteUser": "vscode",
+	"mounts": [
+		"source=${localEnv:USERPROFILE}/src/datasets,target=/workspaces/trader_buddy/datasets,type=bind,consistency=cached"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.pylint",
+				"ms-python.vscode-pylance",
+				"lfs.vscode-emacs-friendly",
+				"kimgronqvist.vscode-ido",
+				"McCarter.start-git-bash"
+			],
+			"settings": {
+				"editor.formatOnSave": true,
+				"python.defaultInterpreterPath": "/usr/local/bin/python",
+				"python.languageServer": "Pylance",
+				"python.formatting.autopep8Path": "/usr/local/bin/autopep8",
+				"python.formatting.blackPath": "/usr/local/bin/black",
+				"python.formatting.yapfPath": "/usr/local/bin/yapf"
+			}
+		}
+	}
+}

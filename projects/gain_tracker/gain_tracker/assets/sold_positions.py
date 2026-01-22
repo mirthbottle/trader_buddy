@@ -128,13 +128,15 @@ def closed_positions(
     3. more than 1 position_lot_id sold for the same symbol
       handle by seeing if there's a match after summing the quantities
       by symbol.
+    4. 2 or more sale transactions cover the total quantity of positions sold
+      per symbol but they both sold some of the same position_lot_id.
+      Splits positions to match each transaction using FIFO allocation.
+    5. (case flag M) multiple sale transactions where each transaction has the same quantity.
+      The merge results in duplicates, which are removed and then handled by case 4.
 
     edge case not handled but will be flagged:
-    We need to flag these siutations and handle them with transitions_to_patch
-    4. 2 or more sale transactions cover the total quantity of positions sold
-      per symbol but they both sold some of the same position_lot_id
-    5. (case flag M) multiple sale transactions where each transaction has the same quantity
-      The merge will result in duplicates bc of combos. 
+    We need to flag these situations and handle them with transactions_to_patch
+    - Unmatched transactions where total quantities don't match (case flag U)
     """
     dates_sold = sorted(
         sold_transactions["transaction_date"].unique(),
@@ -253,16 +255,104 @@ def closed_positions(
             # print(new_closed_positions[[
             #     "quantity", "quantity_transaction", "original_qty", "price_paid"]])
 
-    # if there are still unmatched transactions then we have case 4
+    # Case 4: 2 or more sale transactions cover the total quantity of positions sold
+    # per symbol but they both sold some of the same position_lot_id
+    # Example: Position A (10 shares) + Position B (15 shares) sold via
+    # Transaction 1 (12 shares) + Transaction 2 (13 shares)
+    # Result: Split missing positions to match transactions:
+    #   - Transaction 1: 10 from A, 2 from B
+    #   - Transaction 2: 13 from B
+    missing3 = missing1.loc[
+        ~missing1["position_lot_id"].isin(
+            new_closed_positions["position_lot_id"])]
     closed3 = closed_transactions.loc[
         ~closed_transactions["transaction_id"].isin(
             new_closed_positions["transaction_id"])]
-    if len(closed3) > unmatched_count:
-        print(f"unmatched: \n {closed3}")
+    
+    if len(missing3) > 0 and len(closed3) > 0:
+        # Group by symbol and check if total quantities match
+        missing3_reset = missing3.reset_index()
+        closed3_reset = closed3.reset_index()
+        
+        missing3_totals = missing3_reset.groupby("symbol_description")["quantity"].sum()
+        closed3_totals = closed3_reset.groupby("symbol_description")["quantity"].sum()
+        
+        # Find symbols where total quantities match
+        matched_symbols = missing3_totals.index.intersection(closed3_totals.index)
+        matched_symbols = [s for s in matched_symbols 
+                          if missing3_totals[s] == closed3_totals[s]]
+        
+        if len(matched_symbols) > 0:
+            new_closed3_rows = []
+            for symbol in matched_symbols:
+                # Get positions and transactions for this symbol, sorted by date_acquired/quantity
+                sym_positions = missing3_reset.loc[
+                    missing3_reset["symbol_description"] == symbol
+                ].sort_values("date_acquired").to_dict("records")
+                sym_transactions = closed3_reset.loc[
+                    closed3_reset["symbol_description"] == symbol
+                ].sort_values("quantity").to_dict("records")
+                
+                # Track remaining quantity for each position
+                pos_remaining = {p["position_lot_id"]: p["quantity"] for p in sym_positions}
+                pos_data = {p["position_lot_id"]: p for p in sym_positions}
+                
+                # For each transaction, consume from positions until fulfilled
+                for txn in sym_transactions:
+                    txn_qty_remaining = txn["quantity"]
+                    txn_mv = txn["market_value"]
+                    txn_fee = txn["transaction_fee"]
+                    price_per_share = txn_mv / txn["quantity"]
+                    fee_per_share = txn_fee / txn["quantity"]
+                    
+                    for pos_lot_id in list(pos_remaining.keys()):
+                        if txn_qty_remaining <= 0:
+                            break
+                        if pos_remaining[pos_lot_id] <= 0:
+                            continue
+                        
+                        # Take as much as we can from this position
+                        qty_to_take = min(pos_remaining[pos_lot_id], txn_qty_remaining)
+                        pos = pos_data[pos_lot_id]
+                        
+                        new_closed3_rows.append({
+                            "symbol_description": symbol,
+                            "quantity": qty_to_take,
+                            "position_lot_id": pos_lot_id,
+                            "account_id_key": pos["account_id_key"],
+                            "position_id": pos["position_id"],
+                            "price_paid": pos["price_paid"],
+                            "date_acquired": pos["date_acquired"],
+                            "original_qty": pos["original_qty"],
+                            "market_value": price_per_share * qty_to_take,
+                            "transaction_fee": fee_per_share * qty_to_take,
+                            "transaction_id": txn["transaction_id"],
+                            "date_closed": txn["date_closed"],
+                            "timestamp": txn["timestamp"]
+                        })
+                        
+                        pos_remaining[pos_lot_id] -= qty_to_take
+                        txn_qty_remaining -= qty_to_take
+            
+            if new_closed3_rows:
+                new_closed3 = pd.DataFrame(new_closed3_rows)
+                print(f"case 4 matched (position split to match transactions):\n{new_closed3}")
+                new_closed_positions = pd.concat([new_closed_positions, new_closed3])
+                # Clear the 'M' flag if case 4 resolved the duplicate matches
+                if case_flag == 'M':
+                    case_flag = ''
+                    case_message = ''
+                    unmatched_count = 0
+    
+    # Check if there are still unmatched transactions
+    closed4 = closed_transactions.loc[
+        ~closed_transactions["transaction_id"].isin(
+            new_closed_positions["transaction_id"])]
+    if len(closed4) > unmatched_count:
+        print(f"unmatched: \n {closed4}")
         case_flag += 'U'
         case_message = "unmatched transactions left over"
-        unmatched_count = len(closed3)
-        # there could still be other matches
+        unmatched_count = len(closed4)
 
     if len(new_closed_positions) > 0:
         positions = new_closed_positions.apply(

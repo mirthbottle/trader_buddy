@@ -226,6 +226,10 @@ def sample_sold_ambiguous_multiples():
 def test_closed_position_ambiguous_multiples(
         sample_sold_ambiguous_multiples, sample_missing_positions_multiple_lot_ids):
     # 3 position_lot_ids were sold by AAPL, but only 2 transactions
+    # Case 4 handles this by splitting positions to match transactions using FIFO
+    # Positions sorted by date_acquired: 2019-11-20 (10), 2020-05-15 (50), 2021-01-01 (100)
+    # Txn 25 (80): 10 + 50 + 20 from oldest positions
+    # Txn 26 (80): remaining 80 from position 1
     result = closed_positions(
         default_config,
         sample_sold_ambiguous_multiples.copy(deep=True),
@@ -233,12 +237,13 @@ def test_closed_position_ambiguous_multiples(
     )
 
     output = list(result)[0]
-
+    result = output.value
     mdata = output.metadata
     print(mdata)
     print(result)
-    assert mdata["unmatched_count"].value == 2
-    assert mdata["case_flag"].value == 'U'
+    assert len(result) == 4  # 3 splits for txn 25 + 1 for txn 26
+    assert mdata["unmatched_count"].value == 0
+    assert mdata["case_flag"].value == ''
 
 @pytest.fixture
 def sample_missing_dup_multiples():
@@ -260,19 +265,22 @@ def sample_missing_dup_multiples():
 
 def test_closed_position_dup_matches(
         sample_sold_ambiguous_multiples, sample_missing_dup_multiples):
-    # 2 position_lot_ids were sold by AAPL, and 2 transactions
-    # but we don't know how to match them. 
-    # they must be manually matched bc the price_paid and date_acquired will be different
+    # 2 position_lot_ids were sold by AAPL, and 2 transactions with same quantity
+    # Initial merge creates duplicate combos (case 5), but case 4 handles it via FIFO:
+    # Positions sorted by date_acquired: 2019-11-20 (lot 3), 2021-01-01 (lot 1)
+    # Txn 25 (80): matched to lot 3 (oldest)
+    # Txn 26 (80): matched to lot 1
     result = closed_positions(
         default_config,
         sample_sold_ambiguous_multiples.copy(deep=True),
         sample_missing_dup_multiples.copy(deep=True), 
     )
     output = list(result)[0]
-
+    result = output.value
     mdata = output.metadata
     print(mdata)
-    # assert len(result) == 0
-    assert mdata["unmatched_count"].value == 2
-    assert mdata["case_flag"].value == 'M'
+    print(result)
+    assert len(result) == 2
+    assert mdata["unmatched_count"].value == 0
+    assert mdata["case_flag"].value == ''  # No longer flagged since case 4 handles it
 
