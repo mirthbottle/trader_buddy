@@ -376,7 +376,9 @@ def closed_positions(
         closed_gains_df = pd.concat([
             new_closed_positions.reset_index(drop=True),gm_df],axis=1)
 
-        print(f"closed_gains_df:\n{closed_gains_df}")        
+        print_cols = ["symbol_description", "quantity", "transaction_id", 
+                      "date_closed", "market_value"]
+        print(f"closed_gains_df:\n{closed_gains_df[print_cols]}")        
         cols = [
         "symbol_description", "date_closed", "date_acquired", "price_paid", "quantity",
         "market_value", "original_qty", "account_id_key", "position_id", "position_lot_id",
