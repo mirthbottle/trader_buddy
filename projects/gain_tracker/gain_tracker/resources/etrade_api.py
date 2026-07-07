@@ -86,6 +86,7 @@ etrader:
         # etrade format: url?key&token
         authorize_url = service.authorize_url.format(
             self.consumer_key, oauth_token)
+        print(f"\nAuthorization URL (open in browser while logged into E-Trade):\n{authorize_url}\n")
         webbrowser.open(authorize_url)
         oauth_verifier = input("Please accept agreement and enter verification code from browser: ")
         
@@ -122,7 +123,7 @@ etrader:
 
         token expires after 2 hrs, can be renewed up to 1 day
         """
-        response = self.session.get(f"{self.base_url}/oauth/renew_access_token")
+        response = self.session.get(f"{self.base_url}/oauth/renew_access_token", params={})
 
         # check status and if it's not 200, then request new token
         if response is None or response.status_code != 200:
@@ -225,7 +226,7 @@ etrader:
             # the same positionId may have more than one positionLot
             # each has its own positionLotId with a different price
             # and acquiredDate
-            l_resp = self.session.get(p["lotsDetails"])
+            l_resp = self.session.get(p["lotsDetails"], params={})
             l_data = l_resp.json()["PositionLotsResponse"]["PositionLot"]
             p_lots = p_lots+l_data
 

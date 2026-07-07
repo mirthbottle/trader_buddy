@@ -38,6 +38,16 @@ last_7days_partition = TimeWindowPartitionMapping(
     allow_nonexistent_upstream_partitions=True
 )
 
+# Hardcoded patches keyed by partition date (YYYY-MM-DD).
+# Each entry is a list of {transaction_id, position_lot_ids} dicts that bypass
+# all automated case matching and are applied directly.
+HARDCODED_PATCHES: dict[str, list[dict]] = {
+    "2026-03-12": [
+        {"transaction_id": 26071500649922, "position_lot_ids": [2666915164103, 105571762363]},
+        {"transaction_id": 26071500649924, "position_lot_ids": [557766121363]},
+    ],
+}
+
 @asset(
         partitions_def=daily_partdef,
         metadata={"partition_expr": "DATETIME(date)"},
@@ -111,6 +121,7 @@ class ClosedPositionConfig(Config):
         output_required=False
 )
 def closed_positions(
+    context: AssetExecutionContext,
     config: ClosedPositionConfig,
     sold_transactions: pd.DataFrame, missing_positions: pd.DataFrame
 ):
@@ -142,12 +153,12 @@ def closed_positions(
         sold_transactions["transaction_date"].unique(),
         reverse=True)[0:config.sold_days_ago]
     print(f"dates sold: {dates_sold}")
-    # if config.sold_days_ago > 1:
-    sold_transactions = sold_transactions.loc[
-        sold_transactions["transaction_date"].isin(dates_sold)]
-    # else:
-    #    sold_transactions = sold_transactions.loc[
-    #         sold_transactions["transaction_date"] == dates_sold[0]]
+    if config.sold_days_ago > 1:
+        sold_transactions = sold_transactions.loc[
+            sold_transactions["transaction_date"].isin(dates_sold)]
+    else:
+        sold_transactions = sold_transactions.loc[
+            sold_transactions["transaction_date"] == dates_sold[0]]
 
     case_flag = ""
     case_message = ""
@@ -172,7 +183,25 @@ def closed_positions(
     closed_transactions.loc[:, "timestamp"] = closed_transactions[
         "date_closed"].apply(
             lambda d: datetime.combine(d, datetime.min.timetz(), tzinfo=timezone.utc))
-    
+
+    # Stash originals before filtering so the hardcoded patch can reference them.
+    missing1_original = missing1
+    closed_transactions_original = closed_transactions
+
+    # Exclude hardcoded-patch items from all automated case matching.
+    patch_key = context.partition_key
+    patched_lot_ids: set = set()
+    patched_txn_ids: set = set()
+    if patch_key in HARDCODED_PATCHES:
+        for _p in HARDCODED_PATCHES[patch_key]:
+            patched_txn_ids.add(_p["transaction_id"])
+            patched_lot_ids.update(_p["position_lot_ids"])
+        missing1 = missing1.loc[~missing1["position_lot_id"].isin(patched_lot_ids)]
+        closed_transactions = closed_transactions.loc[
+            ~closed_transactions["transaction_id"].isin(patched_txn_ids)]
+        print(f"patch: excluding {len(patched_lot_ids)} position_lot_ids and "
+              f"{len(patched_txn_ids)} transaction_ids from case matching")
+
     # inner join, deal with edge cases later
     new_closed_positions = (
         pd.merge(
@@ -344,9 +373,60 @@ def closed_positions(
                     case_message = ''
                     unmatched_count = 0
     
+    # Apply hardcoded patches (bypass all case logic)
+    if patch_key in HARDCODED_PATCHES:
+        patch_rows = []
+        missing_orig_reset = missing1_original.reset_index()
+        closed_orig_reset = closed_transactions_original.reset_index()
+        for _patch in HARDCODED_PATCHES[patch_key]:
+            _txn_id = _patch["transaction_id"]
+            _lot_ids = _patch["position_lot_ids"]
+            _txn_rows = closed_orig_reset.loc[
+                closed_orig_reset["transaction_id"] == _txn_id]
+            if len(_txn_rows) == 0:
+                print(f"patch warning: transaction_id {_txn_id} not found")
+                continue
+            _txn = _txn_rows.iloc[0].to_dict()
+            _pos_rows = missing_orig_reset.loc[
+                missing_orig_reset["position_lot_id"].isin(_lot_ids)]
+            if len(_pos_rows) == 0:
+                print(f"patch warning: no positions found for lot_ids {_lot_ids}")
+                continue
+            _total_qty = _pos_rows["quantity"].sum()
+            for _, _pos in _pos_rows.iterrows():
+                _qty_frac = _pos["quantity"] / _total_qty
+                patch_rows.append({
+                    "symbol_description": _pos["symbol_description"],
+                    "quantity": _pos["quantity"],
+                    "position_lot_id": _pos["position_lot_id"],
+                    "account_id_key": _pos["account_id_key"],
+                    "position_id": _pos["position_id"],
+                    "price_paid": _pos["price_paid"],
+                    "date_acquired": _pos["date_acquired"],
+                    "original_qty": _pos["original_qty"],
+                    "market_value": _txn["market_value"] * _qty_frac,
+                    "transaction_fee": _txn["transaction_fee"] * _qty_frac,
+                    "transaction_id": _txn_id,
+                    "date_closed": _txn["date_closed"],
+                    "timestamp": _txn["timestamp"],
+                })
+        if patch_rows:
+            _patch_df = pd.DataFrame(patch_rows)
+            print(f"hardcoded patches applied:\n"
+                  f"{_patch_df[['symbol_description','quantity','transaction_id','position_lot_id']]}")
+            new_closed_positions = pd.concat(
+                [new_closed_positions, _patch_df], ignore_index=True)
+            if case_flag == 'M':
+                _still_dup = dup_matches.loc[
+                    ~dup_matches["position_lot_id"].isin(patched_lot_ids)]
+                if len(_still_dup) == 0:
+                    case_flag = ''
+                    case_message = ''
+                    unmatched_count = 0
+
     # Check if there are still unmatched transactions
-    closed4 = closed_transactions.loc[
-        ~closed_transactions["transaction_id"].isin(
+    closed4 = closed_transactions_original.loc[
+        ~closed_transactions_original["transaction_id"].isin(
             new_closed_positions["transaction_id"])]
     if len(closed4) > unmatched_count:
         print(f"unmatched: \n {closed4}")

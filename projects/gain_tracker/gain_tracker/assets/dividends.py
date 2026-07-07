@@ -37,6 +37,13 @@ def attribute_dividend_to_positions(
     # so there won't be etrade_positions for that date
     # we should select the most recent date before the transaction date then
 
+    key = (dividend['account_id_key'], dividend['symbol_description'])
+    if key not in indexed_positions.index:
+        # Delisted symbols or closed positions can still pay dividends later.
+        # Skip attribution when there is no matching position history.
+        print("No indexed positions found for dividend:", dividend.to_dict())
+        return pd.DataFrame([])
+
     positions = indexed_positions.loc[
         dividend['account_id_key'],
         dividend['symbol_description']]
@@ -94,31 +101,37 @@ def position_dividends(
     dividends = dividends.loc[dividends["security_type"] == "EQ"]
 
     if len(dividends) > 0:
-        dividends = (
-            dividends.rename(
-                columns={
-                    "transaction_type": "dividend_type",
-                    "symbol": "symbol_description",
-                    "amount": "dividend"})
+        dividends = dividends.rename(
+            columns={
+                "transaction_type": "dividend_type",
+                "symbol": "symbol_description",
+                "amount": "dividend",
+            }
         )
 
         # dividends will only have 1 record per account_id_key and symbol
-        # we want to pull the positions per 
+        # we want to pull the positions per
         # transaction_date, account_id_key, symbol_description
-        
         positions_i = etrade_positions.set_index(
             ["account_id_key", "symbol_description"]
         )
-        position_divs = pd.concat(
-            dividends.apply(
-                lambda r: attribute_dividend_to_positions(positions_i, r),
-                axis=1).values).reset_index()
-        
+        attributed_dividends = dividends.apply(
+            lambda r: attribute_dividend_to_positions(positions_i, r),
+            axis=1,
+        ).tolist()
+        attributed_dividends = [df for df in attributed_dividends if len(df) > 0]
+
+        if len(attributed_dividends) == 0:
+            yield Output(pd.DataFrame([]))
+            return
+
+        position_divs = pd.concat(attributed_dividends).reset_index()
+
         output_cols = [
             "symbol_description", "account_id_key", "position_lot_id",
-            "transaction_id", "dividend", "description", "dividend_type", 
-            "timestamp", # use the timestamp from etrade_transactions 
+            "transaction_id", "dividend", "description", "dividend_type",
+            "timestamp",  # use the timestamp from etrade_transactions
             "transaction_date",
         ]
-        
+
         yield Output(position_divs[output_cols])

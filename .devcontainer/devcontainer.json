@@ -16,7 +16,8 @@
 				"ms-python.vscode-pylance",
 				"lfs.vscode-emacs-friendly",
 				"kimgronqvist.vscode-ido",
-				"McCarter.start-git-bash"
+				"McCarter.start-git-bash",
+				"ms-toolsai.jupyter"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

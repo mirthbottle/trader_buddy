@@ -67,7 +67,7 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
     
-    today_loc = datetime.now(tz=PT_INFO).date()
+    today_loc = (datetime.now(tz=PT_INFO)-timedelta(hours=6)).date()
     logger.info(today_loc)
 
     if today_loc != partition_date:
@@ -201,7 +201,7 @@ def etrade_positions(
     partition_date_str = context.partition_key
     partition_date = date.fromisoformat(partition_date_str)
     
-    today_loc = datetime.now(tz=PT_INFO).date()
+    today_loc = (datetime.now(tz=PT_INFO)-timedelta(hours=6)).date()
     logger.info(today_loc)
 
     if today_loc != partition_date:
