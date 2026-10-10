@@ -2,7 +2,7 @@
 
 # change terminology to be gain
 """
-from typing import Optional
+import pandas as pd
 import logging
 from datetime import datetime
 from decimal import Decimal, getcontext, ROUND_HALF_UP
@@ -30,7 +30,8 @@ def compute_percent_price_gain(
     this doesn't include transactions...
     should I be computing the raw gain first instead?
     """
-
+    if pd.isnull(start_price) or pd.isnull(end_price):
+        return Decimal('100000')
     pnlp = min(
         Decimal('1000000'),
         Decimal(str(end_price))/Decimal(str(start_price)))+Decimal("-1")
@@ -63,6 +64,8 @@ def compute_percent_gain(
 
     compute as a percent of initial value of the position
     """
+    if pd.isnull(start_price):
+        return Decimal('100000')
     percent_gain = gain / Decimal(str(n_shares))/Decimal(str(start_price))
     
     return percent_gain
@@ -85,7 +88,7 @@ def compute_annualized_percent_gain(
     annualized = min(
         Decimal('1000000'), # max of 1M
         (percent_gain+Decimal("1"))**root_yr+Decimal("-1"))
-    
+
     return annualized, int(days)
 
 

@@ -53,7 +53,6 @@ def camel_to_snake(camel_case):
 
 @asset(
         output_required=False,
-        metadata={"partition_expr": "DATETIME(date)"},
 )
 def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
     """Pull accounts in etrade
@@ -64,21 +63,17 @@ def etrade_accounts(context: AssetExecutionContext, etrader: ETrader):
 
     actually this could be a SCD
     """
-    partition_date_str = context.partition_key
-    partition_date = date.fromisoformat(partition_date_str)
     
     today_loc = (datetime.now(tz=PT_INFO)-timedelta(hours=6)).date()
     logger.info(today_loc)
 
-    if today_loc != partition_date:
-        raise ValueError(f"today {today_loc} is not {partition_date_str}")
     # etrader.create_authenticated_session(
     #     config.session_token, config.session_token_secret)
     accounts = pd.DataFrame(etrader.list_accounts())
 
     snake_cols = {c:camel_to_snake(c) for c in accounts.columns}
     accounts.rename(columns=snake_cols, inplace=True)
-    accounts.loc[:, "date"] = partition_date
+    accounts.loc[:, "date"] = today_loc
 
     return accounts
 
@@ -213,7 +208,7 @@ def etrade_positions(
     for k in keys:
         logger.info(k)
         portfolio = etrader.view_portfolio(k)
-        logger.debug(portfolio)
+        logger.debug(portfolio.head())
         if portfolio is not None:
             portfolio.loc[:, "accountIdKey"] = k
             all_positions.append(portfolio)
@@ -224,7 +219,7 @@ def etrade_positions(
     positions.rename(columns=snake_cols, inplace=True)
     positions.loc[:, "timestamp"] = datetime.now(timezone.utc)
     positions.loc[:, "date_acquired"] = positions["date_acquired"].apply(
-        lambda d: datetime.fromtimestamp(d/1000).date())
+        lambda d: datetime.fromtimestamp(d/1000).date() if pd.notnull(d) else partition_date - timedelta(days=1))
     positions.loc[:, "date"] = partition_date
 
     pos_cols = [

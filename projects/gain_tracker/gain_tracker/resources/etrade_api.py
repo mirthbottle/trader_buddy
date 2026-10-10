@@ -226,9 +226,12 @@ etrader:
             # the same positionId may have more than one positionLot
             # each has its own positionLotId with a different price
             # and acquiredDate
-            l_resp = self.session.get(p["lotsDetails"], params={})
-            l_data = l_resp.json()["PositionLotsResponse"]["PositionLot"]
-            p_lots = p_lots+l_data
+            try:
+                l_resp = self.session.get(p["lotsDetails"], params={})
+                l_data = l_resp.json()["PositionLotsResponse"]["PositionLot"]
+                p_lots = p_lots+l_data
+            except Exception as e:
+                logger.debug("Failed to retrieve lots for position %s: %s", p["positionId"], e)
 
         if len(positions) > 0:
             ps = pd.DataFrame(positions).set_index("positionId").drop("marketValue", axis=1)
